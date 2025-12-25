@@ -2,6 +2,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from app.config import BOT_TOKEN
 from app.handlers.start import router as start_router
+from app.handlers.admin import router as admin_router
 from app.database.base import Base
 from app.database.session import engine
 
@@ -14,7 +15,8 @@ def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
     dp.include_router(start_router)
-
+    dp.include_router(admin_router)
+    print('Бот запущен')
     # Запуск бота
     dp.run_polling(bot)
 
