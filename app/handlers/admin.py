@@ -14,11 +14,24 @@ from app.services.users_service import (
 from app.keyboards.admin_users import (
     users_list_keyboard,
     user_actions_keyboard,
-user_edit_keyboard,
+    user_edit_keyboard,
     user_city_keyboard,
     user_role_keyboard
 )
 
+from app.services.access_keys_service import (
+    get_all_keys,
+    create_access_key,
+    delete_key
+)
+from app.keyboards.admin_access import (
+    admin_access_keyboard,
+    access_keys_list_keyboard,
+    access_key_actions_keyboard,
+    access_roles_keyboard
+)
+from aiogram.fsm.context import FSMContext
+from app.states.admin_access import CreateAccessKeyFSM
 
 router = Router()
 
@@ -38,9 +51,27 @@ async def admin_panel(message: types.Message):
 
 
 @router.callback_query(AdminCallback.filter())
-async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback):
+async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, state: FSMContext):
     action = callback_data.action
+    current_state = await state.get_state()
+    # Если мы в FSM создания пароля
+    if current_state == CreateAccessKeyFSM.waiting_for_role.state:
+        role = callback_data.value
+        data = await state.get_data()
+        password = data.get("password")
 
+        create_access_key(password=password, role=role)
+        await state.clear()
+
+        await call.message.edit_text(
+            f"✅ <b>Пароль создан</b>\n\n"
+            f"Пароль: <code>{password}</code>\n"
+            f"Роль: {role}",
+            reply_markup=admin_access_keyboard(),
+            parse_mode="HTML"
+        )
+        await call.answer()
+        return  # важно! чтобы дальше код admin_callbacks не выполнялся
     # Управление пользователями
     if action == "users":
         await call.message.edit_text(
@@ -159,7 +190,82 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback):
     elif action == "categories":
         await call.answer("Категории в разработке", show_alert=True)
 
+
     elif action == "access":
-        await call.answer("Доступы и пароли в разработке", show_alert=True)
+
+        await call.message.edit_text(
+
+            "🔐 <b>Доступы и пароли</b>",
+
+            reply_markup=admin_access_keyboard(),
+
+            parse_mode="HTML"
+
+        )
+    elif action == "access_list":
+        keys = get_all_keys()
+
+        await call.message.edit_text(
+            "📋 <b>Пароли доступа</b>",
+            reply_markup=access_keys_list_keyboard(keys),
+            parse_mode="HTML"
+        )
+    elif action == "access_view":
+        key_id = int(callback_data.value)
+
+        keys = get_all_keys()
+        key = next((k for k in keys if k.id == key_id), None)
+
+        if not key:
+            await call.answer("Ключ не найден", show_alert=True)
+            return
+
+        await call.message.edit_text(
+            f"🔐 <b>Пароль</b>\n\n"
+            f"Значение: <code>{key.password}</code>\n"
+            f"Роль: {key.role}\n"
+            f"Использован: {key.used_count} раз\n"
+            f"Активен: {'Да' if key.is_active else 'Нет'}",
+            reply_markup=access_key_actions_keyboard(key.id),
+            parse_mode="HTML"
+        )
+
+    elif action == "access_deactivate":
+        key_id = int(callback_data.value)
+        delete_key(key_id)
+
+        await call.answer("Пароль удалён")
+
+        keys = get_all_keys()
+        await call.message.edit_text(
+            "📋 <b>Пароли доступа</b>",
+            reply_markup=access_keys_list_keyboard(keys),
+            parse_mode="HTML"
+        )
+    elif action == "access_create":
+        await call.message.edit_text(
+            "🔐 <b>Создание пароля</b>\n\n"
+            "Введите пароль для доступа:",
+            parse_mode="HTML"
+        )
+        await state.set_state(CreateAccessKeyFSM.waiting_for_password)
 
     await call.answer()
+
+
+@router.message(CreateAccessKeyFSM.waiting_for_password)
+async def access_password_input(message: types.Message, state: FSMContext):
+    password = message.text.strip()
+
+    if len(password) < 4:
+        await message.answer("❌ Пароль слишком короткий. Минимум 4 символа.")
+        return
+
+    await state.update_data(password=password)
+
+    await message.answer(
+        "🧩 Выберите роль для этого пароля:",
+        reply_markup=access_roles_keyboard(message.from_user.id),
+    )
+
+    await state.set_state(CreateAccessKeyFSM.waiting_for_role)

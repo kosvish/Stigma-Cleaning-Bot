@@ -31,5 +31,6 @@ async def process_password(message: types.Message, state: FSMContext):
         return
 
     await message.answer("✅ Доступ разрешён")
+
     await state.clear()
 

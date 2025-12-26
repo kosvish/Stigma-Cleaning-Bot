@@ -29,10 +29,10 @@ def authenticate_user(telegram_id: int, username: str, full_name: str, password:
         # Если пароль не совпал ни с одним ключом
         return None
 
-
 def user_exists(telegram_id: int):
     with SessionLocal() as session:
         user = session.query(User).filter(User.telegram_id == telegram_id).first()
         if user:
             return True
-        return False
+        else:
+            return False
