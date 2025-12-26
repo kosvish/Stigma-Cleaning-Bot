@@ -11,6 +11,12 @@ def get_subcategories_by_category(category_id: int):
             .all()
         )
 
+def get_subcategories_by_id(subcategory_id: int):
+    with SessionLocal() as session:
+        return (
+            session.query(ExpenseSubCategory).filter_by(id=subcategory_id).first()
+        )
+
 
 def create_subcategory(category_id: int, name: str) -> bool:
     with SessionLocal() as session:

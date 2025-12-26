@@ -6,11 +6,11 @@ def categories_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="📦 Категории расходов",
-            callback_data=AdminCallback(action="category_list").pack()
+            callback_data=AdminCallback(action="category_list", role='admin').pack()
         )],
         [InlineKeyboardButton(
             text="⬅ Назад",
-            callback_data=AdminCallback(action="back").pack()
+            callback_data=AdminCallback(action="back", role='admin').pack()
         )]
     ])
 
@@ -24,7 +24,8 @@ def categories_list_keyboard(categories):
                 text=f"📂 {cat.name}",
                 callback_data=AdminCallback(
                     action="subcategory_list",
-                    value=str(cat.id)
+                    value=str(cat.id),
+                    role='admin'
                 ).pack()
             )
         ])
@@ -32,14 +33,14 @@ def categories_list_keyboard(categories):
     keyboard.append([
         InlineKeyboardButton(
             text="➕ Создать категорию",
-            callback_data=AdminCallback(action="category_create").pack()
+            callback_data=AdminCallback(action="category_create", role='admin').pack()
         )
     ])
 
     keyboard.append([
         InlineKeyboardButton(
             text="⬅ Назад",
-            callback_data=AdminCallback(action="back").pack()
+            callback_data=AdminCallback(action="back", role='admin').pack()
         )
     ])
 

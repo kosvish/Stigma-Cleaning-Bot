@@ -20,7 +20,7 @@ def users_list_keyboard(users: list[User]):
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ Назад",
-            callback_data=AdminCallback(action="back").pack()
+            callback_data=AdminCallback(action="back", role='admin').pack()
         )
     ])
 

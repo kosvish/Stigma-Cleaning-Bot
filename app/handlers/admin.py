@@ -1,8 +1,9 @@
-from aiogram import Router, types
+from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery
 
 from app.keyboards.admin import admin_main_keyboard, admin_users_keyboard
+
 from app.services.permissions import user_has_role
 from app.utils.roles import UserRole
 from app.utils.callbacks import AdminCallback
@@ -60,6 +61,9 @@ from app.states.admin_brands import AdminBrandFSM
 router = Router()
 
 
+
+
+
 @router.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if not user_has_role(message.from_user.id, [UserRole.ADMIN]):
@@ -74,7 +78,7 @@ async def admin_panel(message: types.Message):
     )
 
 
-@router.callback_query(AdminCallback.filter())
+@router.callback_query(AdminCallback.filter(F.role =='admin'))
 async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, state: FSMContext):
     action = callback_data.action
     current_state = await state.get_state()

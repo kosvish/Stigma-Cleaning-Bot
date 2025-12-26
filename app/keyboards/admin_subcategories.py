@@ -29,7 +29,8 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
             text="➕ Добавить подкатегорию",
             callback_data=AdminCallback(
                 action="subcategory_create",
-                value=str(category_id)
+                value=str(category_id),
+                role='admin'
             ).pack()
         )
     ])
@@ -39,7 +40,8 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
             text="📦 Бренды",
             callback_data=AdminCallback(
                 action="brand_list",
-                value=str(category_id)
+                value=str(category_id),
+                role='admin'
             ).pack()
         )
     ])
@@ -49,7 +51,8 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
             text="🗑 Удалить категорию",
             callback_data=AdminCallback(
                 action="category_delete",
-                value=str(category_id)
+                value=str(category_id),
+                role='admin'
             ).pack()
         )
     ])
@@ -58,7 +61,8 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
         InlineKeyboardButton(
             text="⬅ Назад",
             callback_data=AdminCallback(
-                action="category_list"
+                action="category_list",
+                role='admin'
             ).pack()
         )
     ])

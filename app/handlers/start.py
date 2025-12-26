@@ -1,8 +1,12 @@
 from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
+from app.keyboards.admin import admin_main_keyboard
 from app.services.auth_service import authenticate_user, user_exists
 from aiogram.filters import Command
+
+from app.services.permissions import user_has_role
 
 router = Router()
 
@@ -12,7 +16,8 @@ class AuthFSM(StatesGroup):
 @router.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     if user_exists(message.from_user.id):
-        await message.answer(f'С возращением {message.from_user.first_name}')
+        if user_has_role(message.from_user.id, ['admin']):
+            await message.answer(f'С возращением Админ {message.from_user.first_name}', reply_markup=admin_main_keyboard())
     else:
         await message.answer("🔐 Введите пароль доступа")
         await state.set_state(AuthFSM.waiting_for_password)
@@ -31,6 +36,8 @@ async def process_password(message: types.Message, state: FSMContext):
         return
 
     await message.answer("✅ Доступ разрешён")
-
     await state.clear()
+    if user_has_role(message.from_user.id, ['admin']):
+        await start(message, state)
+
 

@@ -12,7 +12,8 @@ def brands_list_keyboard(category_id: int, brands):
                     text=f"🗑 {brand.name}",
                     callback_data=AdminCallback(
                         action="brand_delete",
-                        value=str(brand.id)
+                        value=str(brand.id),
+                        role='admin'
                     ).pack()
                 )
             ])
@@ -20,7 +21,8 @@ def brands_list_keyboard(category_id: int, brands):
         keyboard.append([
             InlineKeyboardButton(
                 text="(брендов нет)",
-                callback_data="noop"
+                callback_data="noop",
+                role='admin'
             )
         ])
 
@@ -29,7 +31,8 @@ def brands_list_keyboard(category_id: int, brands):
             text="➕ Добавить бренд",
             callback_data=AdminCallback(
                 action="brand_create",
-                value=str(category_id)
+                value=str(category_id),
+                role='admin'
             ).pack()
         )
     ])
@@ -39,7 +42,8 @@ def brands_list_keyboard(category_id: int, brands):
             text="⬅ Назад",
             callback_data=AdminCallback(
                 action="subcategory_list",
-                value=str(category_id)
+                value=str(category_id),
+                role='admin'
             ).pack()
         )
     ])

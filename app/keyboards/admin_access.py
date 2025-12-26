@@ -21,7 +21,7 @@ def admin_access_keyboard():
             [
                 InlineKeyboardButton(
                     text="⬅️ Назад",
-                    callback_data=AdminCallback(action="back").pack()
+                    callback_data=AdminCallback(action="back", role='admin').pack()
                 )
             ]
         ]
@@ -46,7 +46,7 @@ def access_keys_list_keyboard(keys):
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ Назад",
-            callback_data=AdminCallback(action="access").pack()
+            callback_data=AdminCallback(action="access",  role='admin').pack()
         )
     ])
 
@@ -61,14 +61,15 @@ def access_key_actions_keyboard(key_id: int):
                     text="❌ Удалить пароль",
                     callback_data=AdminCallback(
                         action="access_deactivate",
-                        value=str(key_id)
+                        value=str(key_id),
+                        role='admin'
                     ).pack()
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="⬅️ Назад",
-                    callback_data=AdminCallback(action="access_list").pack()
+                    callback_data=AdminCallback(action="access_list", role='admin').pack()
                 )
             ]
         ]
@@ -82,13 +83,15 @@ def access_roles_keyboard(user_id: int):
         cb_data = AdminCallback(
             action="access_set_role",
             user_id=user_id,  # ✅ передаём user_id
-            value=role
+            value=role,
+            role='admin'
         ).pack()
 
         keyboard.append([
             InlineKeyboardButton(
                 text=role,
-                callback_data=cb_data
+                callback_data=cb_data,
+                role='admin'
             )
         ])
 
