@@ -36,6 +36,16 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
 
     keyboard.append([
         InlineKeyboardButton(
+            text="📦 Бренды",
+            callback_data=AdminCallback(
+                action="brand_list",
+                value=str(category_id)
+            ).pack()
+        )
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(
             text="🗑 Удалить категорию",
             callback_data=AdminCallback(
                 action="category_delete",

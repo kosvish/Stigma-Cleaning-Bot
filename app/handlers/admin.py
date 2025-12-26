@@ -49,6 +49,13 @@ from app.services.expense_subcategories_service import (
 )
 from app.keyboards.admin_subcategories import subcategories_list_keyboard
 from app.states.admin_subcategories import AdminSubCategoryFSM
+from app.services.expense_brands_service import (
+    get_brands_by_category,
+    create_brand,
+    delete_brand
+)
+from app.keyboards.admin_brands import brands_list_keyboard
+from app.states.admin_brands import AdminBrandFSM
 
 router = Router()
 
@@ -351,6 +358,34 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
 
         await call.answer("Подкатегория удалена")
 
+    # ------------БРЕНДЫ------------#
+    elif action == "brand_list":
+        category_id = int(callback_data.value)
+        brands = get_brands_by_category(category_id)
+
+        await call.message.edit_text(
+            "📦 <b>Бренды</b>",
+            reply_markup=brands_list_keyboard(category_id, brands),
+            parse_mode="HTML"
+        )
+
+    elif action == "brand_create":
+        category_id = int(callback_data.value)
+
+        await state.update_data(category_id=category_id)
+        await call.message.edit_text(
+            "➕ <b>Создание бренда</b>\n\n"
+            "Введите название бренда:",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminBrandFSM.waiting_for_brand_name)
+
+    elif action == "brand_delete":
+        brand_id = int(callback_data.value)
+        delete_brand(brand_id)
+
+        await call.answer("Бренд удалён")
+
     await call.answer()
 
 
@@ -419,4 +454,29 @@ async def subcategory_name_input(message: types.Message, state: FSMContext):
     await message.answer(
         "✅ Подкатегория создана",
         reply_markup=subcategories_list_keyboard(category_id, category.name, subs)
+    )
+
+
+@router.message(AdminBrandFSM.waiting_for_brand_name)
+async def brand_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if len(name) < 2:
+        await message.answer("❌ Слишком короткое название")
+        return
+
+    data = await state.get_data()
+    category_id = data["category_id"]
+
+    success = create_brand(category_id, name)
+    if not success:
+        await message.answer("❌ Такой бренд уже существует")
+        return
+
+    await state.clear()
+
+    brands = get_brands_by_category(category_id)
+    await message.answer(
+        "✅ Бренд добавлен",
+        reply_markup=brands_list_keyboard(category_id, brands)
     )
