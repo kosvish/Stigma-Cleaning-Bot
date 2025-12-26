@@ -32,6 +32,23 @@ from app.keyboards.admin_access import (
 )
 from aiogram.fsm.context import FSMContext
 from app.states.admin_access import CreateAccessKeyFSM
+from app.services.expense_categories_service import (
+    get_all_categories,
+    create_category,
+    delete_category, get_category_by_id
+)
+from app.keyboards.admin_categories import (
+    categories_main_keyboard,
+    categories_list_keyboard
+)
+from app.states.admin_categories import AdminCategoryFSM
+from app.services.expense_subcategories_service import (
+    get_subcategories_by_category,
+    create_subcategory,
+    delete_subcategory
+)
+from app.keyboards.admin_subcategories import subcategories_list_keyboard
+from app.states.admin_subcategories import AdminSubCategoryFSM
 
 router = Router()
 
@@ -187,9 +204,6 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
         )
 
 
-    elif action == "categories":
-        await call.answer("Категории в разработке", show_alert=True)
-
 
     elif action == "access":
 
@@ -249,6 +263,93 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
             parse_mode="HTML"
         )
         await state.set_state(CreateAccessKeyFSM.waiting_for_password)
+    elif action == "categories":
+        await call.message.edit_text(
+            "📂 <b>Категории</b>\n\nВыберите раздел:",
+            reply_markup=categories_main_keyboard(),
+            parse_mode="HTML"
+        )
+
+    # ------------КАТЕГОРИИ------------#
+    # ------------КАТЕГОРИИ------------#
+    # ------------КАТЕГОРИИ------------#
+    elif action == "category_list":
+        categories = get_all_categories()
+
+        if not categories:
+            await call.message.edit_text(
+                "📦 Категории пока не созданы",
+                reply_markup=categories_list_keyboard([]),
+                parse_mode="HTML"
+            )
+            return
+
+        await call.message.edit_text(
+            "📦 <b>Категории расходов</b>\n\n"
+            "Нажмите, чтобы удалить:",
+            reply_markup=categories_list_keyboard(categories),
+            parse_mode="HTML"
+        )
+
+
+    elif action == "category_create":
+        await call.message.edit_text(
+            "➕ <b>Создание категории</b>\n\n"
+            "Введите название категории:",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminCategoryFSM.waiting_for_category_name)
+
+    elif action == "category_delete":
+        category_id = int(callback_data.value)
+        delete_category(category_id)
+        await call.answer("Категория удалена")
+        categories = get_all_categories()
+        await call.message.edit_text(
+            "📂 <b>Категории расходов</b>",
+            reply_markup=categories_list_keyboard(categories),
+            parse_mode="HTML"
+        )
+
+    # ------------ПОДКАТЕГОРИИ------------#
+    # ------------ПОДКАТЕГОРИИ------------#
+    # ------------ПОДКАТЕГОРИИ------------#
+
+    elif action == "subcategory_list":
+        category_id = int(callback_data.value)
+        category = get_category_by_id(category_id)
+        if category:
+            subcategories = get_subcategories_by_category(category_id)
+            await call.message.edit_text(
+                f"📂 <b>{category.name}</b>\n\n"
+                "Подкатегории:",
+                reply_markup=subcategories_list_keyboard(
+                    category_id,
+                    category.name,
+                    subcategories
+                ),
+                parse_mode="HTML"
+            )
+        else:
+            await call.answer('Данной категории не существует')
+
+    elif action == "subcategory_create":
+        category_id = int(callback_data.value)
+
+        await state.update_data(category_id=category_id)
+        await call.message.edit_text(
+            "➕ <b>Создание подкатегории</b>\n\n"
+            "Введите название:",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminSubCategoryFSM.waiting_for_subcategory_name)
+
+
+    elif action == "subcategory_delete":
+        sub_id = int(callback_data.value)
+        delete_subcategory(sub_id)
+
+        await call.answer("Подкатегория удалена")
 
     await call.answer()
 
@@ -269,3 +370,53 @@ async def access_password_input(message: types.Message, state: FSMContext):
     )
 
     await state.set_state(CreateAccessKeyFSM.waiting_for_role)
+
+
+@router.message(AdminCategoryFSM.waiting_for_category_name)
+async def category_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if len(name) < 3:
+        await message.answer("❌ Слишком короткое название")
+        return
+
+    success = create_category(name)
+
+    if not success:
+        await message.answer("❌ Такая категория уже существует")
+        return
+
+    await state.clear()
+
+    categories = get_all_categories()
+    await message.answer(
+        "✅ Категория создана",
+        reply_markup=categories_list_keyboard(categories)
+    )
+
+
+@router.message(AdminSubCategoryFSM.waiting_for_subcategory_name)
+async def subcategory_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if len(name) < 2:
+        await message.answer("❌ Слишком короткое название")
+        return
+
+    data = await state.get_data()
+    category_id = data["category_id"]
+
+    success = create_subcategory(category_id, name)
+
+    if not success:
+        await message.answer("❌ Такая подкатегория уже существует")
+        return
+
+    await state.clear()
+
+    subs = get_subcategories_by_category(category_id)
+    category = get_category_by_id(category_id)
+    await message.answer(
+        "✅ Подкатегория создана",
+        reply_markup=subcategories_list_keyboard(category_id, category.name, subs)
+    )
