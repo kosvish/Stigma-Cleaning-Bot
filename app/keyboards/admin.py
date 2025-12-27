@@ -81,7 +81,7 @@ def city_admin_keyboard():
         [
             InlineKeyboardButton(
                 text="⬅ Назад",
-                callback_data=AdminCallback(action="admin_panel").pack()
+                callback_data=AdminCallback(action="back", role='admin').pack()
             )
         ]
     ])
