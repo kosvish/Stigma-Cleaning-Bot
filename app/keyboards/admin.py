@@ -69,13 +69,13 @@ def city_admin_keyboard():
         [
             InlineKeyboardButton(
                 text="📋 Список городов",
-                callback_data=AdminCallback(action="city_list").pack()
+                callback_data=AdminCallback(action="city_list", role='admin').pack()
             )
         ],
         [
             InlineKeyboardButton(
                 text="➕ Добавить город",
-                callback_data=AdminCallback(action="city_add").pack()
+                callback_data=AdminCallback(action="city_add", role='admin').pack()
             )
         ],
         [
@@ -96,7 +96,8 @@ def cities_list_keyboard(cities):
                 text=f"🏙 {city.name}",
                 callback_data=AdminCallback(
                     action="city_delete",
-                    value=str(city.id)
+                    value=str(city.id),
+                    role='admin'
                 ).pack()
             )
         ])
@@ -104,7 +105,7 @@ def cities_list_keyboard(cities):
     keyboard.append([
         InlineKeyboardButton(
             text="⬅ Назад",
-            callback_data=AdminCallback(action="city").pack()
+            callback_data=AdminCallback(action="city", role='admin').pack()
         )
     ])
 
