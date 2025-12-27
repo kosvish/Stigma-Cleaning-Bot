@@ -9,13 +9,13 @@ def admin_access_keyboard():
             [
                 InlineKeyboardButton(
                     text="📋 Активные пароли",
-                    callback_data=AdminCallback(action="access_list").pack()
+                    callback_data=AdminCallback(action="access_list", role='admin').pack()
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="➕ Создать пароль",
-                    callback_data=AdminCallback(action="access_create").pack()
+                    callback_data=AdminCallback(action="access_create", role='admin').pack()
                 )
             ],
             [
