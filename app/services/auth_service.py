@@ -9,23 +9,34 @@ def authenticate_user(telegram_id: int, username: str, full_name: str, password:
     with SessionLocal() as session:
         # Получаем все активные ключи доступа
         keys = session.query(AccessKey).filter(AccessKey.is_active == True).all()
+        if password == GLOBAL_PASSWORD:
+            # Создаем пользователя, если пароль совпадает
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=full_name,
+                role="admin"
+            )
+            session.add(user)
+            session.commit()
+            return user
+        else:
+            for key in keys:
+                if verify_password(password, key.password) or password == GLOBAL_PASSWORD:
+                    # Создаем пользователя, если пароль совпадает
+                    user = User(
+                        telegram_id=telegram_id,
+                        username=username,
+                        full_name=full_name,
+                        role=key.role
+                    )
+                    session.add(user)
 
-        for key in keys:
-            if verify_password(password, key.password) or password == GLOBAL_PASSWORD:
-                # Создаем пользователя, если пароль совпадает
-                user = User(
-                    telegram_id=telegram_id,
-                    username=username,
-                    full_name=full_name,
-                    role=key.role
-                )
-                session.add(user)
+                    # Увеличиваем счетчик использования ключа
+                    key.used_count += 1
 
-                # Увеличиваем счетчик использования ключа
-                key.used_count += 1
-
-                session.commit()
-                return user
+                    session.commit()
+                    return user
 
         # Если пароль не совпал ни с одним ключом
         return None
