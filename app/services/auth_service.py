@@ -22,7 +22,7 @@ def authenticate_user(telegram_id: int, username: str, full_name: str, password:
             return user
         else:
             for key in keys:
-                if verify_password(password, key.password) or password == GLOBAL_PASSWORD:
+                if verify_password(password, key.password):
                     # Создаем пользователя, если пароль совпадает
                     user = User(
                         telegram_id=telegram_id,

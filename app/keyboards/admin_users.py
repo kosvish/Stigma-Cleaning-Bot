@@ -51,7 +51,7 @@ def user_actions_keyboard(user_id: int):
             [
                 InlineKeyboardButton(
                     text="⬅️ Назад",
-                    callback_data=AdminCallback(action="users").pack()
+                    callback_data=AdminCallback(action="users", role='admin').pack()
                 )
             ]
         ]
@@ -84,7 +84,8 @@ def user_edit_keyboard(user_id: int):
                     text="⬅️ Назад",
                     callback_data=AdminCallback(
                         action="user_view",
-                        user_id=user_id
+                        user_id=user_id,
+                        role='admin'
                     ).pack()
                 )
             ]
@@ -113,7 +114,8 @@ def user_city_keyboard(user_id: int):
             text="⬅️ Назад",
             callback_data=AdminCallback(
                 action="user_edit",
-                user_id=user_id
+                user_id=user_id,
+                role='admin'
             ).pack()
         )
     ])
@@ -143,7 +145,8 @@ def user_role_keyboard(user_id: int):
             text="⬅️ Назад",
             callback_data=AdminCallback(
                 action="user_edit",
-                user_id=user_id
+                user_id=user_id,
+                role='admin'
             ).pack()
         )
     ])

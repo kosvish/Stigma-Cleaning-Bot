@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery
 
 from app.keyboards.admin import admin_main_keyboard, admin_users_keyboard, city_admin_keyboard, cities_list_keyboard
+from app.keyboards.manager import manager_main_keyboard
 from app.services.cities_service import add_city, get_all_cities, delete_city
 
 from app.services.permissions import user_has_role
@@ -110,12 +111,22 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
 
     # Назад в главное меню
     elif action == "back":
-        await call.message.edit_text(
-            "🛠 <b>Админ-панель</b>\n\n"
-            "Выберите действие:",
-            reply_markup=admin_main_keyboard(),
-            parse_mode="HTML"
-        )
+        print(user_has_role(call.from_user.id, [UserRole.MANAGER]))
+        print(user_has_role(call.from_user.id, [UserRole.ADMIN]))
+        if user_has_role(call.from_user.id, [UserRole.ADMIN]):
+            await call.message.edit_text(
+                "🛠 <b>Админ-панель</b>\n\n"
+                "Выберите действие:",
+                reply_markup=admin_main_keyboard(),
+                parse_mode="HTML"
+            )
+        elif user_has_role(call.from_user.id, [UserRole.MANAGER]):
+            await call.message.answer(
+                "🛠 <b>Менеджер-панель</b>\n\n"
+                "Выберите действие:",
+                reply_markup=manager_main_keyboard(),
+                parse_mode="HTML"
+            )
 
     # Заглушки (пока)
     elif action == "users_list":

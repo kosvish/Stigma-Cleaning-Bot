@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from app.keyboards.admin import admin_main_keyboard
 from app.keyboards.create_expense import expense_categories_keyboard, expense_subcategories_keyboard, \
     expense_brands_keyboard, expense_order_ids_keyboard, expense_cities_keyboard, expense_confirm_keyboard
+from app.keyboards.manager import manager_main_keyboard
 from app.services.cities_service import get_all_cities
 from app.services.expense_brands_service import get_brands_by_category
 from app.services.expense_categories_service import get_all_categories, get_category_by_id
@@ -15,6 +16,7 @@ from app.services.expense_create import expense_type_keyboard
 from app.services.expense_subcategories_service import get_subcategories_by_category, get_subcategories_by_id
 from app.services.google_sheets_service import get_recent_order_ids, append_expense_to_sheet
 from app.services.permissions import user_has_role
+from app.services.users_service import get_user_by_id
 from app.states.create_expense import CreateExpenseFSM
 from app.utils.bot_message_utils import send_and_store, delete_prev_bot_message
 from app.utils.callbacks import AdminCallback, ExpenseCallback
@@ -160,6 +162,7 @@ async def expense_price_input(message: types.Message, state: FSMContext):
         return
     await delete_prev_bot_message(message, state)
     await state.update_data(cost=price)
+    await state.update_data(user_id=message.from_user.id)
 
     # Получаем последние ID заказов через Google Apps Script
     recent_order_ids = get_recent_order_ids(days=3)
@@ -221,19 +224,21 @@ async def expense_confirm(call: CallbackQuery, callback_data: ExpenseCallback, s
     Универсальный обработчик подтверждения расхода.
     """
     data = await state.get_data()
-
+    user_id = data.get("user_id")
     if callback_data.value == "yes":
         # Пользователь подтвердил расход, записываем в Google Sheet
         append_expense_to_sheet(data)
-
         await call.message.edit_text(
             "✅ Расход успешно записан!",
         )
-        await state.clear()
-        await call.answer()
-        if user_has_role(call.message.from_user.id, ['admin']):
+        if user_has_role(user_id, ['admin']):
             await call.message.answer(f'Вы в панеле администратора.',
                                  reply_markup=admin_main_keyboard())
+        elif user_has_role(user_id, ['manager']):
+            await call.message.answer(f'Вы в панеле менеджера.',
+                                      reply_markup=manager_main_keyboard())
+        await state.clear()
+        await call.answer()
         return
 
     elif callback_data.value.startswith("edit_"):

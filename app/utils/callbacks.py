@@ -5,7 +5,7 @@ class AdminCallback(CallbackData, prefix="admin"):
     action: str
     user_id: int | None = None
     value: str | None = None
-    role: str | None = 'admin'
+    role: str | None = None
 
 
 class ExpenseCallback(CallbackData, prefix="expense"):
@@ -14,6 +14,16 @@ class ExpenseCallback(CallbackData, prefix="expense"):
     subcategory_id: int | None = None
     brand_id: int | None = None
     value: str | None = None
+
+
+class ManagerCallback(CallbackData, prefix="manager"):
+    action: str
+    category_id: int | None = None
+    subcategory_id: int | None = None
+    brand_id: int | None = None
+    value: str | None = None
+    role: str | None = 'manager'
+
 
 
 def is_admin_or_manager(callback_data: AdminCallback):
