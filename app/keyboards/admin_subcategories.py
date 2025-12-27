@@ -12,7 +12,8 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
                     text=f"🗑 {sub.name}",
                     callback_data=AdminCallback(
                         action="subcategory_delete",
-                        value=str(sub.id)
+                        value=str(sub.id),
+                        role='admin'
                     ).pack()
                 )
             ])
@@ -20,7 +21,8 @@ def subcategories_list_keyboard(category_id: int, category_name: str, subcategor
         keyboard.append([
             InlineKeyboardButton(
                 text="(нет подкатегорий)",
-                callback_data="noop"
+                callback_data="noop",
+                role='admin'
             )
         ])
 
