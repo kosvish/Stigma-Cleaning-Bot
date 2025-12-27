@@ -15,13 +15,9 @@ class AuthFSM(StatesGroup):
 
 @router.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
-    print(message.from_user.id)
     if user_exists(message.from_user.id):
-        print(f'пользователь {message.from_user.id} существует')
         if user_has_role(message.from_user.id, ['admin']):
             await message.answer(f'С возращением Админ {message.from_user.first_name}', reply_markup=admin_main_keyboard())
-        else:
-            print('но он не админ')
     else:
         await message.answer("🔐 Введите пароль доступа")
         await state.set_state(AuthFSM.waiting_for_password)
