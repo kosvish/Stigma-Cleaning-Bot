@@ -69,7 +69,8 @@ def expense_brands_keyboard(brands):
                 text=brand.name,
                 callback_data=ExpenseCallback(
                     action="expense_brand_select",
-                    value=str(brand.id)
+                    brand_id=brand.id,
+                    value=brand.name
                 ).pack()
             )
         ])

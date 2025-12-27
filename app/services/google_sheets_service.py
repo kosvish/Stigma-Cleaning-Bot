@@ -4,7 +4,7 @@ import pytz
 
 from app.config import WEBAPP_URL
 
-GOOGLE_EXPENSES_URL = "https://script.google.com/macros/s/AKfycbwRyBtcFp0pvtCQ54TH0PZAaSBM9i82GbDw3JArHIA-IKJw2cKpZdfSgkFhQhj6VHwlew/exec"
+GOOGLE_EXPENSES_URL = "https://script.google.com/macros/s/AKfycbzCNOMJiidv3WW_Tz-8iyXyfI4rfMAn4mSnMesKiV5o4-5oRhWfzKsQUsBjk2GsHxJugA/exec"
 
 
 def append_expense_to_sheet(data: dict) -> bool:

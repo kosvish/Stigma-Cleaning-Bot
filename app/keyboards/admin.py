@@ -25,6 +25,12 @@ def admin_main_keyboard():
             ],
             [
                 InlineKeyboardButton(
+                    text="🏙️ Города",
+                    callback_data=AdminCallback(action="city", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="➕ Записать расход",
                     callback_data=ExpenseCallback(action="expense_create").pack()
                 )
@@ -56,3 +62,50 @@ def admin_users_keyboard():
             ]
         ]
     )
+
+
+def city_admin_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="📋 Список городов",
+                callback_data=AdminCallback(action="city_list").pack()
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить город",
+                callback_data=AdminCallback(action="city_add").pack()
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅ Назад",
+                callback_data=AdminCallback(action="admin_panel").pack()
+            )
+        ]
+    ])
+
+
+def cities_list_keyboard(cities):
+    keyboard = []
+
+    for city in cities:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"🏙 {city.name}",
+                callback_data=AdminCallback(
+                    action="city_delete",
+                    value=str(city.id)
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅ Назад",
+            callback_data=AdminCallback(action="city").pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

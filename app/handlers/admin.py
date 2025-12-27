@@ -2,9 +2,11 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery
 
-from app.keyboards.admin import admin_main_keyboard, admin_users_keyboard
+from app.keyboards.admin import admin_main_keyboard, admin_users_keyboard, city_admin_keyboard, cities_list_keyboard
+from app.services.cities_service import add_city, get_all_cities, delete_city
 
 from app.services.permissions import user_has_role
+from app.states.admin_city import CreateCityFSM
 from app.utils.roles import UserRole
 from app.utils.callbacks import AdminCallback
 from app.services.users_service import (
@@ -61,9 +63,6 @@ from app.states.admin_brands import AdminBrandFSM
 router = Router()
 
 
-
-
-
 @router.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if not user_has_role(message.from_user.id, [UserRole.ADMIN]):
@@ -78,7 +77,7 @@ async def admin_panel(message: types.Message):
     )
 
 
-@router.callback_query(AdminCallback.filter(F.role =='admin'))
+@router.callback_query(AdminCallback.filter(F.role == 'admin'))
 async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, state: FSMContext):
     action = callback_data.action
     current_state = await state.get_state()
@@ -390,7 +389,53 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
 
         await call.answer("Бренд удалён")
 
+    elif action == 'city':
+        await call.message.edit_text(
+            "🏙 <b>Управление городами</b>",
+            reply_markup=city_admin_keyboard(),
+            parse_mode="HTML"
+        )
+        await call.answer()
+    elif action == 'city_list':
+        cities = get_all_cities()
+
+        await call.message.edit_text(
+            "📋 <b>Список городов</b>\n\n"
+            "Нажмите на город, чтобы удалить:",
+            reply_markup=cities_list_keyboard(cities),
+            parse_mode="HTML"
+        )
+    elif action == 'city_delete':
+        city_id = int(callback_data.value)
+        delete_city(city_id)
+        await call.answer("Город удалён")
+    elif action == "city_add":
+        await call.message.edit_text(
+            "➕ <b>Создание города</b>\n\n"
+            "Введите название города:",
+            parse_mode="HTML"
+        )
+        await state.set_state(CreateCityFSM.waiting_for_city_name)
     await call.answer()
+
+
+@router.message(CreateCityFSM.waiting_for_city_name)
+async def add_city_name(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if not name:
+        await message.answer("❌ Название не может быть пустым")
+        return
+
+    add_city(name)
+
+    await state.clear()
+    await message.answer(
+        f"✅ Город <b>{name}</b> добавлен",
+        reply_markup=city_admin_keyboard(),
+        parse_mode="HTML"
+    )
+    await state.clear()
 
 
 @router.message(CreateAccessKeyFSM.waiting_for_password)

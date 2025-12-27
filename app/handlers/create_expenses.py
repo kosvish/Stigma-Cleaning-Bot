@@ -5,6 +5,7 @@ from aiogram import Router, types, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
 
+from app.keyboards.admin import admin_main_keyboard
 from app.keyboards.create_expense import expense_categories_keyboard, expense_subcategories_keyboard, \
     expense_brands_keyboard, expense_order_ids_keyboard, expense_cities_keyboard, expense_confirm_keyboard
 from app.services.cities_service import get_all_cities
@@ -13,7 +14,9 @@ from app.services.expense_categories_service import get_all_categories, get_cate
 from app.services.expense_create import expense_type_keyboard
 from app.services.expense_subcategories_service import get_subcategories_by_category, get_subcategories_by_id
 from app.services.google_sheets_service import get_recent_order_ids, append_expense_to_sheet
+from app.services.permissions import user_has_role
 from app.states.create_expense import CreateExpenseFSM
+from app.utils.bot_message_utils import send_and_store, delete_prev_bot_message
 from app.utils.callbacks import AdminCallback, ExpenseCallback
 from app.utils.text import format_expense_preview
 
@@ -99,8 +102,10 @@ async def expense_subcategory_selected(call: CallbackQuery, callback_data: Expen
 @router.callback_query(ExpenseCallback.filter(F.action == "expense_brand_select"))
 async def expense_brand_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
     if callback_data.value.isnumeric():
-        brand_id = int(callback_data.value)
-        brand = get_brands_by_category(brand_id)
+        brand_id = int(callback_data.brand_id)
+        brands = get_brands_by_category(brand_id)
+        index_brand = brands.index(brand_id)
+        brand = brands[index_brand]
         await state.update_data(brand_id=brand_id, brand=brand.name)
     else:
         brand_id = 0
@@ -124,17 +129,24 @@ async def expense_quantity_input(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(quantity=quantity)
-
-    await message.answer("✏️ Введите наименование расхода (назначение):")
+    await send_and_store(
+        message,
+        state,
+        "✏️ Введите наименование расхода (назначение):"
+    )
     await state.set_state(CreateExpenseFSM.waiting_for_name)
 
 
 @router.message(CreateExpenseFSM.waiting_for_name)
 async def expense_name_input(message: types.Message, state: FSMContext):
     name = message.text.strip()
+    await delete_prev_bot_message(message, state)
     await state.update_data(name=name)
-
-    await message.answer("💰 Введите стоимость расхода:")
+    await send_and_store(
+        message,
+        state,
+        "💰 Введите стоимость расхода:"
+    )
     await state.set_state(CreateExpenseFSM.waiting_for_cost)
 
 
@@ -146,13 +158,14 @@ async def expense_price_input(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Пожалуйста, введите число.")
         return
-
+    await delete_prev_bot_message(message, state)
     await state.update_data(cost=price)
 
     # Получаем последние ID заказов через Google Apps Script
     recent_order_ids = get_recent_order_ids(days=3)
-
-    await message.answer(
+    await send_and_store(
+        message,
+        state,
         "🔗 Выберите ID заказа (или нажмите Пропустить / Нет заказов):",
         reply_markup=expense_order_ids_keyboard(recent_order_ids)
     )
@@ -188,7 +201,6 @@ async def expense_city_selected(call: CallbackQuery, callback_data: ExpenseCallb
     await state.update_data(city=callback_data.value)
 
     data = await state.get_data()
-    # data["date"] = datetime.now().strftime("%d.%m.%Y")  # Добавляем текущую дату
     date = datetime.now().strftime("%d.%m.%Y")
     await state.update_data(date=date)
     await call.message.edit_text(
@@ -219,6 +231,9 @@ async def expense_confirm(call: CallbackQuery, callback_data: ExpenseCallback, s
         )
         await state.clear()
         await call.answer()
+        if user_has_role(call.message.from_user.id, ['admin']):
+            await call.message.answer(f'Вы в панеле администратора.',
+                                 reply_markup=admin_main_keyboard())
         return
 
     elif callback_data.value.startswith("edit_"):
