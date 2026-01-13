@@ -1,136 +1,146 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import ExpenseCallback, AdminCallback  # Убедись, что AdminCallback импортирован
 
-from app.utils.callbacks import ExpenseCallback
 
-
+# 1. Выбор типа (Назад -> в главное меню)
 def expense_type_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
+            InlineKeyboardButton(text="Прямой", callback_data="expense_type:direct"),
+            InlineKeyboardButton(text="Общий", callback_data="expense_type:general")
+        ],
+        [
+            # Возврат в админку или менеджерскую (зависит от логики, тут пример для админа)
             InlineKeyboardButton(
-                text="Прямой",
-                callback_data="expense_type:direct"
-            ),
-            InlineKeyboardButton(
-                text="Общий",
-                callback_data="expense_type:general"
+                text="⬅️ Отмена",
+                callback_data=AdminCallback(action="back", role='admin').pack()
             )
         ]
     ])
 
 
+# 2. Категории (Назад -> к выбору типа)
 def expense_categories_keyboard(categories):
-    """
-    Создает inline-клавиатуру с категориями для записи расхода.
-    categories - список объектов категорий из БД.
-    """
     keyboard = []
-
     for cat in categories:
         keyboard.append([
             InlineKeyboardButton(
                 text=f"📂 {cat.name}",
-                callback_data=ExpenseCallback(
-                    action="expense_category_select",
-                    value=str(cat.id)  # передаем id категории
-                ).pack()
+                callback_data=ExpenseCallback(action="expense_category_select", value=str(cat.id)).pack()
             )
         ])
 
+    # КНОПКА НАЗАД
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=ExpenseCallback(action="back_to_type").pack()
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+# 3. Подкатегории (Назад -> к категориям)
 def expense_subcategories_keyboard(subcategories):
-    """
-    Создает inline-клавиатуру с подкатегориями для выбора расхода.
-    subcategories - список объектов подкатегорий из БД.
-    """
     keyboard = []
-
     for sub in subcategories:
         keyboard.append([
             InlineKeyboardButton(
                 text=f"📁 {sub.name}",
-                callback_data=ExpenseCallback(
-                    action="expense_subcategory_select",
-                    value=str(sub.id)
-                ).pack()
+                callback_data=ExpenseCallback(action="expense_subcategory_select", value=str(sub.id)).pack()
             )
         ])
 
+    # КНОПКА НАЗАД
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=ExpenseCallback(action="back_to_categories").pack()
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+# 4. Бренды (Назад -> к подкатегориям)
 def expense_brands_keyboard(brands):
     keyboard = []
-
     for brand in brands:
         keyboard.append([
             InlineKeyboardButton(
                 text=brand.name,
-                callback_data=ExpenseCallback(
-                    action="expense_brand_select",
-                    brand_id=brand.id,
-                    value=brand.name
-                ).pack()
+                callback_data=ExpenseCallback(action="expense_brand_select", brand_id=brand.id, value=brand.name).pack()
             )
         ])
     keyboard.append([
         InlineKeyboardButton(
             text='Нету бренда',
-            callback_data=ExpenseCallback(
-                action="expense_brand_select",
-                value='--'
-            ).pack()
+            callback_data=ExpenseCallback(action="expense_brand_select", value='--').pack()
         )
     ])
 
+    # КНОПКА НАЗАД
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=ExpenseCallback(action="back_to_subcategories").pack()
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-
+# 5. ID Заказов (Назад -> к вводу цены)
 def expense_order_ids_keyboard(order_ids: list[str]) -> InlineKeyboardMarkup:
     keyboard = []
     for oid in order_ids:
         keyboard.append([
             InlineKeyboardButton(
                 text=oid,
-                callback_data=ExpenseCallback(
-                    action="expense_set_order",
-                    value=oid
-                ).pack()
+                callback_data=ExpenseCallback(action="expense_set_order", value=oid).pack()
             )
         ])
-    # Кнопка "пропустить"
     keyboard.append([
         InlineKeyboardButton(
             text="Пропустить / Нет заказов",
-            callback_data=ExpenseCallback(
-                action="expense_set_order",
-                value="-"
-            ).pack()
+            callback_data=ExpenseCallback(action="expense_set_order", value="-").pack()
         )
     ])
 
+    # КНОПКА НАЗАД
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад к цене",
+            callback_data=ExpenseCallback(action="back_to_cost").pack()
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+# 6. Города (Назад -> к выбору заказа)
 def expense_cities_keyboard(cities):
     keyboard = []
-
     for city in cities:
         keyboard.append([
             InlineKeyboardButton(
                 text=city.name,
-                callback_data=ExpenseCallback(
-                    action="expense_set_city",
-                    value=str(city.name)
-                ).pack()
+                callback_data=ExpenseCallback(action="expense_set_city", value=str(city.name)).pack()
             )
         ])
 
+    # КНОПКА НАЗАД
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад к заказам",
+            callback_data=ExpenseCallback(action="back_to_orders").pack()
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# Хелпер для ручного ввода (оставляем как в прошлом ответе)
+def back_button_keyboard(target_action: str):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=ExpenseCallback(action=target_action).pack())]
+    ])
 
 
 def expense_confirm_keyboard(state_data: dict) -> InlineKeyboardMarkup:
@@ -173,4 +183,3 @@ def expense_confirm_keyboard(state_data: dict) -> InlineKeyboardMarkup:
             ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
-

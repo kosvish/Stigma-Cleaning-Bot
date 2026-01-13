@@ -8,6 +8,7 @@ from app.services.cities_service import add_city, get_all_cities, delete_city
 
 from app.services.permissions import user_has_role
 from app.states.admin_city import CreateCityFSM
+from app.utils.bot_message_utils import delete_user_message, delete_prev_bot_message
 from app.utils.roles import UserRole
 from app.utils.callbacks import AdminCallback
 from app.services.users_service import (
@@ -313,12 +314,16 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
         )
 
 
+
     elif action == "category_create":
-        await call.message.edit_text(
+        # Сохраняем сообщение "Введите название...", чтобы потом его удалить
+        msg = await call.message.edit_text(
             "➕ <b>Создание категории</b>\n\n"
             "Введите название категории:",
             parse_mode="HTML"
         )
+        # ВАЖНО: Записываем ID сообщения в память
+        await state.update_data(last_bot_message_id=msg.message_id)
         await state.set_state(AdminCategoryFSM.waiting_for_category_name)
 
     elif action == "category_delete":
@@ -354,15 +359,18 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
         else:
             await call.answer('Данной категории не существует')
 
+
     elif action == "subcategory_create":
         category_id = int(callback_data.value)
-
         await state.update_data(category_id=category_id)
-        await call.message.edit_text(
+        # Сохраняем сообщение для последующего удаления
+        msg = await call.message.edit_text(
             "➕ <b>Создание подкатегории</b>\n\n"
             "Введите название:",
             parse_mode="HTML"
         )
+        # ВАЖНО: Записываем ID
+        await state.update_data(last_bot_message_id=msg.message_id)
         await state.set_state(AdminSubCategoryFSM.waiting_for_subcategory_name)
 
 
@@ -383,15 +391,17 @@ async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, sta
             parse_mode="HTML"
         )
 
+
     elif action == "brand_create":
         category_id = int(callback_data.value)
-
         await state.update_data(category_id=category_id)
-        await call.message.edit_text(
-            "➕ <b>Создание бренда</b>\n\n"
-            "Введите название бренда:",
+        # Запоминаем ID сообщения, которое мы редактируем
+        msg = await call.message.edit_text(
+            "➕ <b>Создание бренда</b>\n\nВведите название бренда:",
             parse_mode="HTML"
         )
+        # ВАЖНО: Сохраняем ID, чтобы потом удалить
+        await state.update_data(last_bot_message_id=msg.message_id)
         await state.set_state(AdminBrandFSM.waiting_for_brand_name)
 
     elif action == "brand_delete":
@@ -469,6 +479,8 @@ async def access_password_input(message: types.Message, state: FSMContext):
 
 @router.message(AdminCategoryFSM.waiting_for_category_name)
 async def category_name_input(message: types.Message, state: FSMContext):
+    await delete_user_message(message)
+    await delete_prev_bot_message(message, state)
     name = message.text.strip()
 
     if len(name) < 3:
@@ -492,6 +504,9 @@ async def category_name_input(message: types.Message, state: FSMContext):
 
 @router.message(AdminSubCategoryFSM.waiting_for_subcategory_name)
 async def subcategory_name_input(message: types.Message, state: FSMContext):
+    await delete_user_message(message)
+    # 2. Удаляем просьбу ввода ("Введите название...")
+    await delete_prev_bot_message(message, state)
     name = message.text.strip()
 
     if len(name) < 2:
@@ -519,6 +534,8 @@ async def subcategory_name_input(message: types.Message, state: FSMContext):
 
 @router.message(AdminBrandFSM.waiting_for_brand_name)
 async def brand_name_input(message: types.Message, state: FSMContext):
+    await delete_user_message(message)  # Удаляем "Nike"
+    await delete_prev_bot_message(message, state)  # Удаляем "Введите название..."
     name = message.text.strip()
 
     if len(name) < 2:
