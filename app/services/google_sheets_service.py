@@ -1,8 +1,7 @@
 import aiohttp
-from app.config import WEBAPP_URL
 
 
-GOOGLE_EXPENSES_URL = "https://script.google.com/macros/s/AKfycbzCNOMJiidv3WW_Tz-8iyXyfI4rfMAn4mSnMesKiV5o4-5oRhWfzKsQUsBjk2GsHxJugA/exec"
+GOOGLE_EXPENSES_URL = "https://script.google.com/macros/s/AKfycbyDhS0ltUhQGZuVDihUgtj9M331WYW91GPHqTLO-B1pBke0I3jYy1U4JDIitTwr8nyEeA/exec"
 
 
 async def append_expense_to_sheet(data: dict) -> bool:
@@ -20,6 +19,8 @@ async def append_expense_to_sheet(data: dict) -> bool:
         "amount": data.get("cost"),
         "order_id": data.get("order_id") or "",
         "city": data.get("city"),
+        "image_base64": data.get("image_base64"),
+        "image_name": data.get("image_name")
     }
 
     try:

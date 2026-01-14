@@ -1,6 +1,4 @@
 from datetime import datetime
-
-import pytz
 from aiogram import Router, types, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -20,6 +18,9 @@ from app.services.permissions import user_has_role
 from app.states.create_expense import CreateExpenseFSM
 from app.utils.bot_message_utils import send_and_store, delete_prev_bot_message, delete_user_message
 from app.utils.callbacks import AdminCallback, ExpenseCallback
+import base64
+import io
+from app.keyboards.create_expense import receipt_keyboard  # Не забудь импортировать
 
 router = Router()
 
@@ -296,7 +297,6 @@ async def expense_price_input(message: types.Message, state: FSMContext):
     await state.update_data(cost=price)
     await state.update_data(user_id=message.from_user.id)
 
-
     loading_msg = await message.answer("⏳ Загружаю список заказов...")
     recent_order_ids = await get_recent_order_ids(days=3)
     try:
@@ -339,18 +339,79 @@ async def expense_order_selected(
 async def expense_city_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
     await state.update_data(city=callback_data.value)
 
-    data = await state.get_data()
-    date = datetime.now().strftime("%d.%m.%Y")
-    await state.update_data(date=date)
+    # ИЗМЕНЕНИЕ: Теперь просим фото
     await call.message.edit_text(
-        "💡 Проверьте введённые данные:",
-        reply_markup=expense_confirm_keyboard(data),
+        "📸 <b>Прикрепите фотографию чека/перевода</b>\n"
+        "Или нажмите кнопку пропустить, если чека нет.",
+        reply_markup=receipt_keyboard(),
         parse_mode="HTML"
     )
 
-    await state.set_state(CreateExpenseFSM.waiting_for_confirm)
+    await state.set_state(CreateExpenseFSM.waiting_for_receipt)
     await call.answer()
 
+
+# --- ОБРАБОТКА ФОТО ---
+
+@router.message(CreateExpenseFSM.waiting_for_receipt, F.photo)
+async def expense_receipt_photo(message: types.Message, state: FSMContext):
+    # 1. Удаляем сообщение юзера (саму картинку, чтобы не засорять чат)
+    # Но учти: удалять фото иногда жалко, если юзер хочет его видеть.
+    # Если хочешь чистый чат — раскомментируй:
+    await delete_user_message(message)
+    await delete_prev_bot_message(message, state)  # Удаляем "Пришлите фото..."
+
+    # 2. Скачиваем фото (берем самое большое качество - последний элемент массива)
+    photo = message.photo[-1]
+
+    # Скачиваем в память (BytesIO)
+    file_io = io.BytesIO()
+    await message.bot.download(photo, destination=file_io)
+    file_bytes = file_io.getvalue()
+
+    # 3. Кодируем в base64
+    base64_str = base64.b64encode(file_bytes).decode('utf-8')
+
+    # Сохраняем в state
+    await state.update_data(
+        image_base64=base64_str,
+        image_name=f"receipt_{message.from_user.id}_{message.message_id}.jpg",
+        has_receipt=True
+    )
+
+    # 4. Переходим к подтверждению
+    await show_confirmation(message, state)
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "skip_receipt"), CreateExpenseFSM.waiting_for_receipt)
+async def expense_skip_receipt(call: CallbackQuery, state: FSMContext):
+    # Просто помечаем, что фото нет
+    await state.update_data(image_base64=None, image_name=None, has_receipt=False)
+
+    # Переходим к подтверждению (через вызов функции, т.к. это callback)
+    await show_confirmation(call.message, state, is_edit=True)
+
+
+# --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ПОДТВЕРЖДЕНИЯ ---
+# Вынеси этот код в отдельную функцию, так как мы его зовем из двух мест (фото и кнопка)
+async def show_confirmation(message: types.Message, state: FSMContext, is_edit: bool = False):
+    data = await state.get_data()
+    date = datetime.now().strftime("%d.%m.%Y")
+    await state.update_data(date=date)
+
+    text = "💡 Проверьте введённые данные:\n"
+    if data.get('has_receipt'):
+        text += "\n📸 <b>Чек прикреплен</b>"
+
+    # Если мы пришли из кнопки (is_edit=True), то редактируем.
+    # Если загрузили фото (Message), то отправляем новое.
+    if is_edit:
+        await message.edit_text(text, reply_markup=expense_confirm_keyboard(data), parse_mode="HTML")
+    else:
+        await send_and_store(message, state, text, reply_markup=expense_confirm_keyboard(
+            data))
+
+    await state.set_state(CreateExpenseFSM.waiting_for_confirm)
 
 @router.callback_query(ExpenseCallback.filter(F.action == "confirm_expense"), CreateExpenseFSM.waiting_for_confirm)
 async def expense_confirm(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):

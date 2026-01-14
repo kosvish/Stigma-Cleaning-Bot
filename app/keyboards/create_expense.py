@@ -183,3 +183,20 @@ def expense_confirm_keyboard(state_data: dict) -> InlineKeyboardMarkup:
             ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def receipt_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="⏭ Пропустить без фото",
+                callback_data=ExpenseCallback(action="skip_receipt").pack()
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к городу",
+                callback_data=ExpenseCallback(action="back_to_city").pack()
+            )
+        ]
+    ])
