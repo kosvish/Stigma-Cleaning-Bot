@@ -20,6 +20,7 @@ class AuthFSM(StatesGroup):
 
 @router.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
+    print("start")
     # Если пользователь уже есть в базе
     if user_exists(message.from_user.id):
         if user_has_role(message.from_user.id, ['admin']):
