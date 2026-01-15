@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from app.keyboards.admin import admin_main_keyboard
 from app.keyboards.create_expense import expense_categories_keyboard, expense_subcategories_keyboard, \
     expense_brands_keyboard, expense_order_ids_keyboard, expense_cities_keyboard, back_button_keyboard, \
-    expense_confirm_keyboard
+    expense_confirm_keyboard, expense_cashboxes_keyboard
 from app.keyboards.manager import manager_main_keyboard
 from app.services.cities_service import get_all_cities
 from app.services.expense_brands_service import get_brands_by_category
@@ -15,12 +15,14 @@ from app.services.expense_create import expense_type_keyboard
 from app.services.expense_subcategories_service import get_subcategories_by_category, get_subcategories_by_id
 from app.services.google_sheets_service import get_recent_order_ids, append_expense_to_sheet
 from app.services.permissions import user_has_role
+from app.services.platrum import get_platrum_expense_categories, get_platrum_category_name, create_platrum_expense
 from app.states.create_expense import CreateExpenseFSM
 from app.utils.bot_message_utils import send_and_store, delete_prev_bot_message, delete_user_message
 from app.utils.callbacks import AdminCallback, ExpenseCallback
 import base64
 import io
 from app.keyboards.create_expense import receipt_keyboard  # Не забудь импортировать
+from app.services.platrum import get_platrum_cashboxes, get_platrum_cashbox_name
 
 router = Router()
 
@@ -28,6 +30,42 @@ router = Router()
 # ==========================================
 # БЛОК НАВИГАЦИИ "НАЗАД"
 # ==========================================
+
+# Вспомогательная функция для перехода к выбору бренда
+# Она нужна, чтобы вызывать её и при выборе подкатегории, и при пропуске
+async def start_brand_selection(message_or_call, state: FSMContext):
+    data = await state.get_data()
+    category_id = int(data.get("category_id"))  # ID из Platrum
+
+    # Тут у тебя была логика получения брендов из БД
+    # Убедись, что твоя функция get_brands_by_category принимает category_id из Platrum
+    from app.services.expense_brands_service import get_brands_by_category
+    brands = get_brands_by_category(category_id)
+
+    # Определяем, редактировать сообщение или отправлять новое
+    if isinstance(message_or_call, types.CallbackQuery):
+        func = message_or_call.message.edit_text
+    else:
+        func = message_or_call.answer
+
+    await func(
+        "🏷 Выберите бренд:",
+        reply_markup=expense_brands_keyboard(brands),
+        parse_mode="HTML"
+    )
+    await state.set_state(CreateExpenseFSM.waiting_for_brand)
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_subcategory_skip"))
+async def expense_subcategory_skip(call: CallbackQuery, state: FSMContext):
+    """Ручной пропуск подкатегории"""
+    # Сохраняем данные как "пустые"
+    await state.update_data(subcategory_id=0, subcategory="-")
+
+    # Переходим к брендам
+    await start_brand_selection(call, state)
+    await call.answer()
+
 
 @router.callback_query(ExpenseCallback.filter(F.action == "back_to_type"))
 async def back_to_type(call: CallbackQuery, state: FSMContext):
@@ -43,8 +81,9 @@ async def back_to_type(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(ExpenseCallback.filter(F.action == "back_to_categories"))
 async def back_to_categories(call: CallbackQuery, state: FSMContext):
-    """Возврат от выбора подкатегории к списку категорий"""
-    categories = get_all_categories()  # Заново получаем список
+    """Возврат от выбора подкатегории к списку категорий (Platrum)"""
+    # Получаем категории верхнего уровня (parent_id=None)
+    categories = await get_platrum_expense_categories(parent_id=None)
 
     await call.message.edit_text(
         "🏷 Выберите категорию расхода:",
@@ -57,11 +96,12 @@ async def back_to_categories(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(ExpenseCallback.filter(F.action == "back_to_subcategories"))
 async def back_to_subcategories(call: CallbackQuery, state: FSMContext):
-    """Возврат от выбора бренда к списку подкатегорий"""
+    """Возврат от выбора бренда к списку подкатегорий (Platrum)"""
     data = await state.get_data()
-    category_id = data.get("category_id")  # Достаем ID категории из памяти
+    category_id = int(data.get("category_id"))  # Достаем ID категории
 
-    subcategories = get_subcategories_by_category(category_id)
+    # Получаем подкатегории для сохраненной категории
+    subcategories = await get_platrum_expense_categories(parent_id=category_id)
 
     await call.message.edit_text(
         "📁 Выберите подкатегорию:",
@@ -125,6 +165,20 @@ async def back_to_cost(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+@router.callback_query(ExpenseCallback.filter(F.action == "back_to_cashbox"))
+async def back_to_cashbox(call: CallbackQuery, state: FSMContext):
+    """Возврат от чека к выбору кассы"""
+    cashboxes = await get_platrum_cashboxes()
+
+    await call.message.edit_text(
+        "🏙 <b>Выберите город:</b>",
+        reply_markup=expense_cashboxes_keyboard(cashboxes),
+        parse_mode="HTML"
+    )
+    await state.set_state(CreateExpenseFSM.waiting_for_cashbox)
+    await call.answer()
+
+
 @router.callback_query(ExpenseCallback.filter(F.action == "back_to_orders"))
 async def back_to_orders(call: CallbackQuery, state: FSMContext):
     """Возврат от выбора города к списку заказов"""
@@ -163,10 +217,9 @@ async def expense_create_start(call: CallbackQuery, callback_data: AdminCallback
 async def expense_type_selected(call: CallbackQuery, state: FSMContext):
     expense_type = call.data.split(":")[1]  # direct / general
     expense_value = call.data.split(":")[2]  # direct / general
-    categories = get_all_categories()
     await state.update_data(expense_type=expense_type)
     await state.update_data(expense_value=expense_value)
-
+    categories = await get_platrum_expense_categories(parent_id=None)
     # Переходим к выбору категории
     await call.message.edit_text(
         "🏷 Выберите категорию расхода:",
@@ -181,12 +234,15 @@ async def expense_type_selected(call: CallbackQuery, state: FSMContext):
 @router.callback_query(ExpenseCallback.filter(F.action == "expense_category_select"))
 async def expense_category_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
     category_id = int(callback_data.value)
-    category = get_category_by_id(category_id)
-    await state.update_data(category_id=category_id)
-    await state.update_data(category=category.name)
 
-    # # Здесь мы можем получить подкатегории из БД по выбранной категории
-    subcategories = get_subcategories_by_category(category_id)
+    # Получаем имя для Google таблицы
+    category_name = await get_platrum_category_name(category_id)
+
+    # Сохраняем ID для Platrum и Имя для Google
+    await state.update_data(category_id=category_id, category=category_name)
+
+    # Получаем подкатегории
+    subcategories = await get_platrum_expense_categories(parent_id=category_id)
 
     await call.message.edit_text(
         "📁 Выберите подкатегорию:",
@@ -201,12 +257,11 @@ async def expense_category_selected(call: CallbackQuery, callback_data: ExpenseC
 @router.callback_query(ExpenseCallback.filter(F.action == "expense_subcategory_select"))
 async def expense_subcategory_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
     subcategory_id = int(callback_data.value)
-    subcategory = get_subcategories_by_id(subcategory_id)
-    await state.update_data(subcategory_id=subcategory_id, subcategory=subcategory.name)
-
-    # Получаем бренды по категории, если нужно
+    subcategory_name = await get_platrum_category_name(subcategory_id)
+    await state.update_data(subcategory_id=subcategory_id, subcategory=subcategory_name)
     data = await state.get_data()
     category_id = data.get("category_id")
+    from app.services.expense_brands_service import get_brands_by_category
     brands = get_brands_by_category(category_id)
 
     await call.message.edit_text(
@@ -324,22 +379,28 @@ async def expense_order_selected(
     order_id = callback_data.value if callback_data.value != "none" else None
     await state.update_data(order_id=order_id)
 
-    cities = get_all_cities()
+    # --- ИЗМЕНЕНИЕ: Получаем кассы вместо городов из БД ---
+    cashboxes = await get_platrum_cashboxes()
 
     await call.message.edit_text(
-        "🏙 Выберите город:",
-        reply_markup=expense_cities_keyboard(cities)
+        "🏙 <b>Выберите город:</b>",
+        reply_markup=expense_cashboxes_keyboard(cashboxes),  # Новая клавиатура
+        parse_mode="HTML"
     )
 
-    await state.set_state(CreateExpenseFSM.waiting_for_city)
+    # Ставим новое состояние
+    await state.set_state(CreateExpenseFSM.waiting_for_cashbox)
     await call.answer()
 
 
-@router.callback_query(ExpenseCallback.filter(F.action == "expense_set_city"), CreateExpenseFSM.waiting_for_city)
-async def expense_city_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
-    await state.update_data(city=callback_data.value)
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_set_cashbox"), CreateExpenseFSM.waiting_for_cashbox)
+async def expense_cashbox_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
+    cashbox_id = int(callback_data.value)
 
-    # ИЗМЕНЕНИЕ: Теперь просим фото
+    cashbox_name = await get_platrum_cashbox_name(cashbox_id)
+    await state.update_data(cashbox_id=cashbox_id, city=cashbox_name)
+    from app.keyboards.create_expense import receipt_keyboard
+
     await call.message.edit_text(
         "📸 <b>Прикрепите фотографию чека/перевода</b>\n"
         "Или нажмите кнопку пропустить, если чека нет.",
@@ -413,6 +474,7 @@ async def show_confirmation(message: types.Message, state: FSMContext, is_edit: 
 
     await state.set_state(CreateExpenseFSM.waiting_for_confirm)
 
+
 @router.callback_query(ExpenseCallback.filter(F.action == "confirm_expense"), CreateExpenseFSM.waiting_for_confirm)
 async def expense_confirm(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
     """
@@ -423,6 +485,7 @@ async def expense_confirm(call: CallbackQuery, callback_data: ExpenseCallback, s
     if callback_data.value == "yes":
         # Пользователь подтвердил расход, записываем в Google Sheet
         await append_expense_to_sheet(data)
+        await create_platrum_expense(data, call.from_user.id)
         await call.message.edit_text(
             "✅ Расход успешно записан!",
         )

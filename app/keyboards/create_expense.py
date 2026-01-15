@@ -20,17 +20,25 @@ def expense_type_keyboard():
 
 
 # 2. Категории (Назад -> к выбору типа)
-def expense_categories_keyboard(categories):
+def expense_categories_keyboard(categories: list):
+    """
+    Клавиатура категорий (принимает список dict из Platrum API)
+    """
     keyboard = []
+
     for cat in categories:
+        # cat теперь словарь, обращаемся через ['key']
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📂 {cat.name}",
-                callback_data=ExpenseCallback(action="expense_category_select", value=str(cat.id)).pack()
+                text=f"📂 {cat['name']}",
+                callback_data=ExpenseCallback(
+                    action="expense_category_select",
+                    value=str(cat['id'])
+                ).pack()
             )
         ])
 
-    # КНОПКА НАЗАД
+    # Кнопка НАЗАД (логику оставляем ту же)
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ Назад",
@@ -41,17 +49,30 @@ def expense_categories_keyboard(categories):
 
 
 # 3. Подкатегории (Назад -> к категориям)
-def expense_subcategories_keyboard(subcategories):
+def expense_subcategories_keyboard(subcategories: list):
     keyboard = []
+
     for sub in subcategories:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📁 {sub.name}",
-                callback_data=ExpenseCallback(action="expense_subcategory_select", value=str(sub.id)).pack()
+                text=f"📁 {sub['name']}",
+                callback_data=ExpenseCallback(
+                    action="expense_subcategory_select",
+                    value=str(sub['id'])
+                ).pack()
             )
         ])
 
-    # КНОПКА НАЗАД
+    if not keyboard:
+        # --- НОВАЯ КНОПКА ПРОПУСТИТЬ ---
+        keyboard.append([
+            InlineKeyboardButton(
+                text="⏭ Пропустить / Нет подкатегории",
+                callback_data=ExpenseCallback(action="expense_subcategory_skip").pack()
+            )
+        ])
+
+    # Кнопка НАЗАД
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ Назад",
@@ -196,7 +217,34 @@ def receipt_keyboard():
         [
             InlineKeyboardButton(
                 text="⬅️ Назад к городу",
-                callback_data=ExpenseCallback(action="back_to_city").pack()
+                callback_data=ExpenseCallback(action="back_to_cashbox").pack()
             )
         ]
     ])
+
+
+def expense_cashboxes_keyboard(cashboxes: list):
+    keyboard = []
+    # Сортируем по полю 'order' (порядок), если оно есть, чтобы выводить красиво
+    # Если order=0 или None, они будут в начале/конце в зависимости от логики,
+    # но обычно API отдает уже в нужном порядке.
+
+    for cb in cashboxes:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"🏙 {cb['name']}",  # Добавил иконку города, т.к. для тебя это города
+                callback_data=ExpenseCallback(
+                    action="expense_set_cashbox",
+                    value=str(cb['id'])  # Передаем ID кассы
+                ).pack()
+            )
+        ])
+
+    # Кнопка НАЗАД (возвращает к выбору заказа)
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад к заказам",
+            callback_data=ExpenseCallback(action="back_to_orders").pack()
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

@@ -42,3 +42,5 @@ def update_user_role(user_id: int, role: str):
         user.role = role
         session.commit()
         return True
+
+

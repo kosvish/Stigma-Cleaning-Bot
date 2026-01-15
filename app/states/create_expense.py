@@ -9,6 +9,6 @@ class CreateExpenseFSM(StatesGroup):
     waiting_for_name = State()
     waiting_for_cost = State()
     waiting_for_order_id = State()
-    waiting_for_city = State()
+    waiting_for_cashbox = State()
     waiting_for_confirm = State()
     waiting_for_receipt = State()

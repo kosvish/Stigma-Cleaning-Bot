@@ -13,4 +13,8 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(String(20))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    platrum_id: Mapped[int] = mapped_column(nullable=True)
     city: Mapped[str] = mapped_column(String(20), default="Белгород")
+
+    def __repr__(self):
+        return f"<User {self.telegram_id} ({self.role})>"
