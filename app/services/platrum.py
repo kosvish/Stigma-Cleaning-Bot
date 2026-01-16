@@ -135,10 +135,9 @@ async def create_platrum_expense(data: dict, telegram_user_id: int) -> bool:
         return False
 
     if not user.platrum_id:
-        print(f"❌ Ошибка Platrum: У пользователя {user.username} ({telegram_user_id}) не указан platrum_id.")
-        return False
-
-    platrum_user_id = str(user.platrum_id)
+        platrum_user_id = ''
+    else:
+        platrum_user_id = str(user.platrum_id)
 
     # 2. Определяем категорию
     # Если выбрана подкатегория (не 0) - берем её. Иначе берем родительскую категорию.
