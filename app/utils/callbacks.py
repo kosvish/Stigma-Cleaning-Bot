@@ -25,6 +25,6 @@ class ManagerCallback(CallbackData, prefix="manager"):
     role: str | None = 'manager'
 
 
-
-def is_admin_or_manager(callback_data: AdminCallback):
-    return callback_data.role in ["admin", "manager"]
+class CalcCallback(CallbackData, prefix="calc"):
+    action: str
+    value: str = "none"

@@ -1,5 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from app.utils.callbacks import AdminCallback, ExpenseCallback
+from app.utils.callbacks import AdminCallback, ExpenseCallback, CalcCallback
 
 
 def admin_main_keyboard():
@@ -33,6 +33,12 @@ def admin_main_keyboard():
                 InlineKeyboardButton(
                     text="➕ Записать расход",
                     callback_data=ExpenseCallback(action="expense_create").pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧮 Рассчитать уборку",
+                    callback_data=CalcCallback(action="start").pack()
                 )
             ]
         ]

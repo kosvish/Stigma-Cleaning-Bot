@@ -1,0 +1,2592 @@
+
+==================================================
+FILE: .\main.py
+==================================================
+
+from aiogram import Bot, Dispatcher
+from app.config import BOT_TOKEN
+from app.handlers.start import router as start_router
+from app.handlers.admin import router as admin_router
+from app.handlers.create_expenses import router as expense_router
+from app.database.base import Base
+from app.database.session import engine
+from aiogram.fsm.storage.memory import MemoryStorage
+
+
+def on_startup():
+    Base.metadata.create_all(bind=engine)
+
+
+def main():
+    on_startup()
+
+    bot = Bot(token=BOT_TOKEN)
+    storage = MemoryStorage()  # ← обязательная строчка!
+    dp = Dispatcher(storage=storage)
+    dp.include_router(start_router)
+    dp.include_router(expense_router)
+    dp.include_router(admin_router)
+    # Запуск бота
+    dp.run_polling(bot)
+
+
+if __name__ == "__main__":
+    main()
+
+
+==================================================
+FILE: .\utiles.py
+==================================================
+
+import psutil
+import datetime
+import os
+import speedtest
+
+
+# аптайм
+def get_uptime():
+    boot_time_timestamp = psutil.boot_time()
+    boot_time = datetime.datetime.fromtimestamp(boot_time_timestamp)
+    current_time = datetime.datetime.now()
+    uptime = current_time - boot_time
+    hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return hours, minutes
+
+
+# CPU
+def get_cpu_load():
+    return psutil.cpu_percent(interval=1)
+
+
+# RAM
+def get_ram_load():
+    ram_info = psutil.virtual_memory()
+    return ram_info.percent
+
+
+# Users
+def get_active_users():
+    active_users = os.popen('who').readlines()
+    return len(active_users)
+
+
+# Disk I/O
+def get_disk_io():
+    disk_io = psutil.disk_io_counters(perdisk=False)
+    read_gb = round(disk_io.read_bytes / (1024 ** 3), 2)  # переводим в ГБ
+    write_gb = round(disk_io.write_bytes / (1024 ** 3), 2)  # переводим в ГБ
+    return read_gb, write_gb
+
+
+# internet speed
+def test_speed():
+    try:
+
+        st = speedtest.Speedtest()
+        st.get_best_server()
+        download_speed = round(st.download() / 1_000_000, 2)  # преобразуем в Мбит/с и округляем
+        upload_speed = round(st.upload() / 1_000_000, 2)  # преобразуем в Мбит/с и округляем
+        ping = round(st.results.ping, 2)  # округляем
+
+        # проверим что числовое значение #  Иногда speedtest возвращает ошибку
+        if (isinstance(download_speed, (int, float)) and
+                isinstance(upload_speed, (int, float)) and
+                isinstance(ping, (int, float)) and
+                download_speed > 0 and
+                upload_speed > 0 and
+                ping > 0):
+            return download_speed, upload_speed, ping
+        else:
+            return 0, 0, 0
+
+    except speedtest.ConfigRetrievalError:
+        return 0, 0, 0
+    except Exception:
+        return 0, 0, 0
+
+==================================================
+FILE: .\app\config.py
+==================================================
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = "sqlite:///db.sqlite3"
+WEBAPP_URL = os.getenv("WEBAPP_URL")
+GLOBAL_PASSWORD = os.getenv("GLOBAL_PASSWORD")
+
+==================================================
+FILE: .\app\database\base.py
+==================================================
+
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase):
+    pass
+
+
+==================================================
+FILE: .\app\database\session.py
+==================================================
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.config import DATABASE_URL
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    future=True
+)
+
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False
+)
+
+
+
+==================================================
+FILE: .\app\database\models\access_key.py
+==================================================
+
+from sqlalchemy import String, Boolean, DateTime, Integer
+from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime
+from app.database.base import Base
+
+class AccessKey(Base):
+    __tablename__ = "access_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    password: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+==================================================
+FILE: .\app\database\models\city.py
+==================================================
+
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database.base import Base
+
+
+class City(Base):
+    __tablename__ = "city"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+
+==================================================
+FILE: .\app\database\models\expense_brand.py
+==================================================
+
+from sqlalchemy import String, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database.base import Base
+
+
+class ExpenseBrand(Base):
+    __tablename__ = "expense_brands"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("expense_categories.id", ondelete="CASCADE")
+    )
+
+    category = relationship("ExpenseCategory")
+
+
+==================================================
+FILE: .\app\database\models\expense_category.py
+==================================================
+
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database.base import Base
+
+
+class ExpenseCategory(Base):
+    __tablename__ = "expense_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+
+
+==================================================
+FILE: .\app\database\models\expense_subcategory.py
+==================================================
+
+from sqlalchemy import String, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database.base import Base
+
+
+class ExpenseSubCategory(Base):
+    __tablename__ = "expense_subcategories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("expense_categories.id", ondelete="CASCADE")
+    )
+
+    category = relationship("ExpenseCategory")
+
+
+==================================================
+FILE: .\app\database\models\user.py
+==================================================
+
+from sqlalchemy import String, Boolean, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime
+from app.database.base import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(unique=True)
+    username: Mapped[str | None] = mapped_column(String(50))
+    full_name: Mapped[str | None] = mapped_column(String(100))
+    role: Mapped[str] = mapped_column(String(20))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    city: Mapped[str] = mapped_column(String(20), default="Белгород")
+
+==================================================
+FILE: .\app\handlers\admin.py
+==================================================
+
+from aiogram import Router, types, F
+from aiogram.filters import Command
+from aiogram.types import CallbackQuery
+
+from app.keyboards.admin import admin_main_keyboard, admin_users_keyboard, city_admin_keyboard, cities_list_keyboard
+from app.keyboards.manager import manager_main_keyboard
+from app.services.cities_service import add_city, get_all_cities, delete_city
+
+from app.services.permissions import user_has_role
+from app.states.admin_city import CreateCityFSM
+from app.utils.roles import UserRole
+from app.utils.callbacks import AdminCallback
+from app.services.users_service import (
+    get_all_users,
+    get_user_by_id,
+    delete_user, update_user_city, update_user_role
+)
+from app.keyboards.admin_users import (
+    users_list_keyboard,
+    user_actions_keyboard,
+    user_edit_keyboard,
+    user_city_keyboard,
+    user_role_keyboard
+)
+
+from app.services.access_keys_service import (
+    get_all_keys,
+    create_access_key,
+    delete_key
+)
+from app.keyboards.admin_access import (
+    admin_access_keyboard,
+    access_keys_list_keyboard,
+    access_key_actions_keyboard,
+    access_roles_keyboard
+)
+from aiogram.fsm.context import FSMContext
+from app.states.admin_access import CreateAccessKeyFSM
+from app.services.expense_categories_service import (
+    get_all_categories,
+    create_category,
+    delete_category, get_category_by_id
+)
+from app.keyboards.admin_categories import (
+    categories_main_keyboard,
+    categories_list_keyboard
+)
+from app.states.admin_categories import AdminCategoryFSM
+from app.services.expense_subcategories_service import (
+    get_subcategories_by_category,
+    create_subcategory,
+    delete_subcategory
+)
+from app.keyboards.admin_subcategories import subcategories_list_keyboard
+from app.states.admin_subcategories import AdminSubCategoryFSM
+from app.services.expense_brands_service import (
+    get_brands_by_category,
+    create_brand,
+    delete_brand
+)
+from app.keyboards.admin_brands import brands_list_keyboard
+from app.states.admin_brands import AdminBrandFSM
+
+router = Router()
+
+
+@router.message(Command("admin"))
+async def admin_panel(message: types.Message):
+    if not user_has_role(message.from_user.id, [UserRole.ADMIN]):
+        await message.answer("⛔ У вас нет доступа")
+        return
+
+    await message.answer(
+        "🛠 <b>Админ-панель</b>\n\n"
+        "Выберите действие:",
+        reply_markup=admin_main_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(AdminCallback.filter(F.role == 'admin'))
+async def admin_callbacks(call: CallbackQuery, callback_data: AdminCallback, state: FSMContext):
+    action = callback_data.action
+    current_state = await state.get_state()
+    # Если мы в FSM создания пароля
+    if current_state == CreateAccessKeyFSM.waiting_for_role.state:
+        role = callback_data.value
+        data = await state.get_data()
+        password = data.get("password")
+
+        create_access_key(password=password, role=role)
+        await state.clear()
+
+        await call.message.edit_text(
+            f"✅ <b>Пароль создан</b>\n\n"
+            f"Пароль: <code>{password}</code>\n"
+            f"Роль: {role}",
+            reply_markup=admin_access_keyboard(),
+            parse_mode="HTML"
+        )
+        await call.answer()
+        return  # важно! чтобы дальше код admin_callbacks не выполнялся
+    # Управление пользователями
+    if action == "users":
+        await call.message.edit_text(
+            "👤 <b>Управление пользователями</b>\n\n"
+            "Выберите действие:",
+            reply_markup=admin_users_keyboard(),
+            parse_mode="HTML"
+        )
+
+    # Назад в главное меню
+    elif action == "back":
+        print(user_has_role(call.from_user.id, [UserRole.MANAGER]))
+        print(user_has_role(call.from_user.id, [UserRole.ADMIN]))
+        if user_has_role(call.from_user.id, [UserRole.ADMIN]):
+            await call.message.edit_text(
+                "🛠 <b>Админ-панель</b>\n\n"
+                "Выберите действие:",
+                reply_markup=admin_main_keyboard(),
+                parse_mode="HTML"
+            )
+        elif user_has_role(call.from_user.id, [UserRole.MANAGER]):
+            await call.message.answer(
+                "🛠 <b>Менеджер-панель</b>\n\n"
+                "Выберите действие:",
+                reply_markup=manager_main_keyboard(),
+                parse_mode="HTML"
+            )
+
+    # Заглушки (пока)
+    elif action == "users_list":
+        users = get_all_users()
+
+        if not users:
+            await call.message.edit_text(
+                "👤 Пользователи не найдены",
+                reply_markup=admin_users_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        await call.message.edit_text(
+            "👤 <b>Активные пользователи</b>\n\n"
+            "Выберите пользователя:",
+            reply_markup=users_list_keyboard(users),
+            parse_mode="HTML"
+        )
+    elif action == "user_view":
+        user = get_user_by_id(callback_data.user_id)
+
+        if not user:
+            await call.answer("Пользователь не найден", show_alert=True)
+            return
+
+        await call.message.edit_text(
+            f"👤 <b>Пользователь</b>\n\n"
+            f"Имя: {user.full_name}\n"
+            f"Username: @{user.username}\n"
+            f"Роль: {user.role}\n"
+            f"Город: {user.city}\n"
+            f"ID: {user.telegram_id}",
+            reply_markup=user_actions_keyboard(user.telegram_id),
+            parse_mode="HTML"
+        )
+
+
+    elif action == "user_delete":
+        success = delete_user(callback_data.user_id)
+        if success:
+            await call.answer("Пользователь удалён")
+        else:
+            await call.answer("Ошибка удаления", show_alert=True)
+
+        users = get_all_users()
+        await call.message.edit_text(
+            "👤 <b>Активные пользователи</b>",
+            reply_markup=users_list_keyboard(users),
+            parse_mode="HTML"
+        )
+
+    elif action == "user_edit":
+        user = get_user_by_id(callback_data.user_id)
+
+        await call.message.edit_text(
+            f"✏️ <b>Редактирование пользователя</b>\n\n"
+            f"Имя: {user.full_name}\n"
+            f"Роль: {user.role}\n"
+            f"Город: {user.city}",
+            reply_markup=user_edit_keyboard(user.telegram_id),
+            parse_mode="HTML"
+        )
+
+    elif action == "user_change_city":
+        await call.message.edit_text(
+            "🏙 <b>Выберите город</b>",
+            reply_markup=user_city_keyboard(callback_data.user_id),
+            parse_mode="HTML"
+        )
+
+    elif action == "user_set_city":
+        update_user_city(callback_data.user_id, callback_data.value)
+        await call.answer("Город обновлён")
+
+        # Возвращаемся в редактирование
+        await call.message.edit_text(
+            "✅ Город успешно изменён",
+            reply_markup=user_edit_keyboard(callback_data.user_id)
+        )
+
+    elif action == "user_change_role":
+        await call.message.edit_text(
+            "🧩 <b>Выберите роль</b>",
+            reply_markup=user_role_keyboard(callback_data.user_id),
+            parse_mode="HTML"
+        )
+
+
+    elif action == "user_set_role":
+        update_user_role(callback_data.user_id, callback_data.value)
+        await call.answer("Роль обновлена")
+        await call.message.edit_text(
+            "✅ Роль успешно изменена",
+            reply_markup=user_edit_keyboard(callback_data.user_id)
+        )
+
+
+
+    elif action == "access":
+
+        await call.message.edit_text(
+
+            "🔐 <b>Доступы и пароли</b>",
+
+            reply_markup=admin_access_keyboard(),
+
+            parse_mode="HTML"
+
+        )
+    elif action == "access_list":
+        keys = get_all_keys()
+
+        await call.message.edit_text(
+            "📋 <b>Пароли доступа</b>",
+            reply_markup=access_keys_list_keyboard(keys),
+            parse_mode="HTML"
+        )
+    elif action == "access_view":
+        key_id = int(callback_data.value)
+
+        keys = get_all_keys()
+        key = next((k for k in keys if k.id == key_id), None)
+
+        if not key:
+            await call.answer("Ключ не найден", show_alert=True)
+            return
+
+        await call.message.edit_text(
+            f"🔐 <b>Пароль</b>\n\n"
+            f"Значение: <code>{key.password}</code>\n"
+            f"Роль: {key.role}\n"
+            f"Использован: {key.used_count} раз\n"
+            f"Активен: {'Да' if key.is_active else 'Нет'}",
+            reply_markup=access_key_actions_keyboard(key.id),
+            parse_mode="HTML"
+        )
+
+    elif action == "access_deactivate":
+        key_id = int(callback_data.value)
+        delete_key(key_id)
+
+        await call.answer("Пароль удалён")
+
+        keys = get_all_keys()
+        await call.message.edit_text(
+            "📋 <b>Пароли доступа</b>",
+            reply_markup=access_keys_list_keyboard(keys),
+            parse_mode="HTML"
+        )
+    elif action == "access_create":
+        await call.message.edit_text(
+            "🔐 <b>Создание пароля</b>\n\n"
+            "Введите пароль для доступа:",
+            parse_mode="HTML"
+        )
+        await state.set_state(CreateAccessKeyFSM.waiting_for_password)
+    elif action == "categories":
+        await call.message.edit_text(
+            "📂 <b>Категории</b>\n\nВыберите раздел:",
+            reply_markup=categories_main_keyboard(),
+            parse_mode="HTML"
+        )
+
+    # ------------КАТЕГОРИИ------------#
+    # ------------КАТЕГОРИИ------------#
+    # ------------КАТЕГОРИИ------------#
+    elif action == "category_list":
+        categories = get_all_categories()
+
+        if not categories:
+            await call.message.edit_text(
+                "📦 Категории пока не созданы",
+                reply_markup=categories_list_keyboard([]),
+                parse_mode="HTML"
+            )
+            return
+
+        await call.message.edit_text(
+            "📦 <b>Категории расходов</b>\n\n"
+            "Нажмите, чтобы удалить:",
+            reply_markup=categories_list_keyboard(categories),
+            parse_mode="HTML"
+        )
+
+
+    elif action == "category_create":
+        await call.message.edit_text(
+            "➕ <b>Создание категории</b>\n\n"
+            "Введите название категории:",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminCategoryFSM.waiting_for_category_name)
+
+    elif action == "category_delete":
+        category_id = int(callback_data.value)
+        delete_category(category_id)
+        await call.answer("Категория удалена")
+        categories = get_all_categories()
+        await call.message.edit_text(
+            "📂 <b>Категории расходов</b>",
+            reply_markup=categories_list_keyboard(categories),
+            parse_mode="HTML"
+        )
+
+    # ------------ПОДКАТЕГОРИИ------------#
+    # ------------ПОДКАТЕГОРИИ------------#
+    # ------------ПОДКАТЕГОРИИ------------#
+
+    elif action == "subcategory_list":
+        category_id = int(callback_data.value)
+        category = get_category_by_id(category_id)
+        if category:
+            subcategories = get_subcategories_by_category(category_id)
+            await call.message.edit_text(
+                f"📂 <b>{category.name}</b>\n\n"
+                "Подкатегории:",
+                reply_markup=subcategories_list_keyboard(
+                    category_id,
+                    category.name,
+                    subcategories
+                ),
+                parse_mode="HTML"
+            )
+        else:
+            await call.answer('Данной категории не существует')
+
+    elif action == "subcategory_create":
+        category_id = int(callback_data.value)
+
+        await state.update_data(category_id=category_id)
+        await call.message.edit_text(
+            "➕ <b>Создание подкатегории</b>\n\n"
+            "Введите название:",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminSubCategoryFSM.waiting_for_subcategory_name)
+
+
+    elif action == "subcategory_delete":
+        sub_id = int(callback_data.value)
+        delete_subcategory(sub_id)
+
+        await call.answer("Подкатегория удалена")
+
+    # ------------БРЕНДЫ------------#
+    elif action == "brand_list":
+        category_id = int(callback_data.value)
+        brands = get_brands_by_category(category_id)
+
+        await call.message.edit_text(
+            "📦 <b>Бренды</b>",
+            reply_markup=brands_list_keyboard(category_id, brands),
+            parse_mode="HTML"
+        )
+
+    elif action == "brand_create":
+        category_id = int(callback_data.value)
+
+        await state.update_data(category_id=category_id)
+        await call.message.edit_text(
+            "➕ <b>Создание бренда</b>\n\n"
+            "Введите название бренда:",
+            parse_mode="HTML"
+        )
+        await state.set_state(AdminBrandFSM.waiting_for_brand_name)
+
+    elif action == "brand_delete":
+        brand_id = int(callback_data.value)
+        delete_brand(brand_id)
+
+        await call.answer("Бренд удалён")
+
+    elif action == 'city':
+        await call.message.edit_text(
+            "🏙 <b>Управление городами</b>",
+            reply_markup=city_admin_keyboard(),
+            parse_mode="HTML"
+        )
+        await call.answer()
+    elif action == 'city_list':
+        cities = get_all_cities()
+
+        await call.message.edit_text(
+            "📋 <b>Список городов</b>\n\n"
+            "Нажмите на город, чтобы удалить:",
+            reply_markup=cities_list_keyboard(cities),
+            parse_mode="HTML"
+        )
+    elif action == 'city_delete':
+        city_id = int(callback_data.value)
+        delete_city(city_id)
+        await call.answer("Город удалён")
+    elif action == "city_add":
+        await call.message.edit_text(
+            "➕ <b>Создание города</b>\n\n"
+            "Введите название города:",
+            parse_mode="HTML"
+        )
+        await state.set_state(CreateCityFSM.waiting_for_city_name)
+    await call.answer()
+
+
+@router.message(CreateCityFSM.waiting_for_city_name)
+async def add_city_name(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if not name:
+        await message.answer("❌ Название не может быть пустым")
+        return
+
+    add_city(name)
+
+    await state.clear()
+    await message.answer(
+        f"✅ Город <b>{name}</b> добавлен",
+        reply_markup=city_admin_keyboard(),
+        parse_mode="HTML"
+    )
+    await state.clear()
+
+
+@router.message(CreateAccessKeyFSM.waiting_for_password)
+async def access_password_input(message: types.Message, state: FSMContext):
+    password = message.text.strip()
+
+    if len(password) < 4:
+        await message.answer("❌ Пароль слишком короткий. Минимум 4 символа.")
+        return
+
+    await state.update_data(password=password)
+
+    await message.answer(
+        "🧩 Выберите роль для этого пароля:",
+        reply_markup=access_roles_keyboard(message.from_user.id),
+    )
+
+    await state.set_state(CreateAccessKeyFSM.waiting_for_role)
+
+
+@router.message(AdminCategoryFSM.waiting_for_category_name)
+async def category_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if len(name) < 3:
+        await message.answer("❌ Слишком короткое название")
+        return
+
+    success = create_category(name)
+
+    if not success:
+        await message.answer("❌ Такая категория уже существует")
+        return
+
+    await state.clear()
+
+    categories = get_all_categories()
+    await message.answer(
+        "✅ Категория создана",
+        reply_markup=categories_list_keyboard(categories)
+    )
+
+
+@router.message(AdminSubCategoryFSM.waiting_for_subcategory_name)
+async def subcategory_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if len(name) < 2:
+        await message.answer("❌ Слишком короткое название")
+        return
+
+    data = await state.get_data()
+    category_id = data["category_id"]
+
+    success = create_subcategory(category_id, name)
+
+    if not success:
+        await message.answer("❌ Такая подкатегория уже существует")
+        return
+
+    await state.clear()
+
+    subs = get_subcategories_by_category(category_id)
+    category = get_category_by_id(category_id)
+    await message.answer(
+        "✅ Подкатегория создана",
+        reply_markup=subcategories_list_keyboard(category_id, category.name, subs)
+    )
+
+
+@router.message(AdminBrandFSM.waiting_for_brand_name)
+async def brand_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+
+    if len(name) < 2:
+        await message.answer("❌ Слишком короткое название")
+        return
+
+    data = await state.get_data()
+    category_id = data["category_id"]
+
+    success = create_brand(category_id, name)
+    if not success:
+        await message.answer("❌ Такой бренд уже существует")
+        return
+
+    await state.clear()
+
+    brands = get_brands_by_category(category_id)
+    await message.answer(
+        "✅ Бренд добавлен",
+        reply_markup=brands_list_keyboard(category_id, brands)
+    )
+
+
+==================================================
+FILE: .\app\handlers\create_expenses.py
+==================================================
+
+from datetime import datetime
+
+import pytz
+from aiogram import Router, types, F
+from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
+
+from app.keyboards.admin import admin_main_keyboard
+from app.keyboards.create_expense import expense_categories_keyboard, expense_subcategories_keyboard, \
+    expense_brands_keyboard, expense_order_ids_keyboard, expense_cities_keyboard, expense_confirm_keyboard
+from app.keyboards.manager import manager_main_keyboard
+from app.services.cities_service import get_all_cities
+from app.services.expense_brands_service import get_brands_by_category
+from app.services.expense_categories_service import get_all_categories, get_category_by_id
+from app.services.expense_create import expense_type_keyboard
+from app.services.expense_subcategories_service import get_subcategories_by_category, get_subcategories_by_id
+from app.services.google_sheets_service import get_recent_order_ids, append_expense_to_sheet
+from app.services.permissions import user_has_role
+from app.services.users_service import get_user_by_id
+from app.states.create_expense import CreateExpenseFSM
+from app.utils.bot_message_utils import send_and_store, delete_prev_bot_message
+from app.utils.callbacks import AdminCallback, ExpenseCallback
+from app.utils.text import format_expense_preview
+
+router = Router()
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_create"))
+async def expense_create_start(call: CallbackQuery, callback_data: AdminCallback, state: FSMContext):
+    # Сохраняем роль пользователя в state (можно использовать для логики)
+    # await state.update_data(user_role=callback_data.role)
+
+    await call.message.edit_text(
+        "💰 <b>Создание расхода</b>\n\n"
+        "Выберите тип расхода:",
+        reply_markup=expense_type_keyboard(),  # inline кнопки "Прямой" и "Общий"
+        parse_mode="HTML"
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_type)
+    await call.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("expense_type:"))
+async def expense_type_selected(call: CallbackQuery, state: FSMContext):
+    expense_type = call.data.split(":")[1]  # direct / general
+    expense_value = call.data.split(":")[2]  # direct / general
+    categories = get_all_categories()
+    await state.update_data(expense_type=expense_type)
+    await state.update_data(expense_value=expense_value)
+
+    # Переходим к выбору категории
+    await call.message.edit_text(
+        "🏷 Выберите категорию расхода:",
+        reply_markup=expense_categories_keyboard(categories),  # inline кнопки категорий из БД
+        parse_mode="HTML"
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_category)
+    await call.answer()
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_category_select"))
+async def expense_category_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
+    category_id = int(callback_data.value)
+    category = get_category_by_id(category_id)
+    await state.update_data(category_id=category_id)
+    await state.update_data(category=category.name)
+
+    # # Здесь мы можем получить подкатегории из БД по выбранной категории
+    subcategories = get_subcategories_by_category(category_id)
+
+    await call.message.edit_text(
+        "📁 Выберите подкатегорию:",
+        reply_markup=expense_subcategories_keyboard(subcategories),
+        parse_mode="HTML"
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_subcategory)
+    await call.answer()
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_subcategory_select"))
+async def expense_subcategory_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
+    subcategory_id = int(callback_data.value)
+    subcategory = get_subcategories_by_id(subcategory_id)
+    await state.update_data(subcategory_id=subcategory_id, subcategory=subcategory.name)
+
+    # Получаем бренды по категории, если нужно
+    data = await state.get_data()
+    category_id = data.get("category_id")
+    brands = get_brands_by_category(category_id)
+
+    await call.message.edit_text(
+        "🏷 Выберите бренд:",
+        reply_markup=expense_brands_keyboard(brands),
+        parse_mode="HTML"
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_brand)
+    await call.answer()
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_brand_select"))
+async def expense_brand_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
+    if callback_data.value.isnumeric():
+        brand_id = int(callback_data.brand_id)
+        brands = get_brands_by_category(brand_id)
+        index_brand = brands.index(brand_id)
+        brand = brands[index_brand]
+        await state.update_data(brand_id=brand_id, brand=brand.name)
+    else:
+        brand_id = 0
+        await state.update_data(brand_id=brand_id, brand='-')
+
+    await call.message.edit_text(
+        "🔢 Введите количество едениц покупки или траты (например, 3):",
+        parse_mode="HTML"
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_quantity)
+    await call.answer()
+
+
+@router.message(CreateExpenseFSM.waiting_for_quantity)
+async def expense_quantity_input(message: types.Message, state: FSMContext):
+    try:
+        quantity = float(message.text.replace(",", "."))
+    except ValueError:
+        await message.answer("❌ Пожалуйста, введите число.")
+        return
+
+    await state.update_data(quantity=quantity)
+    await send_and_store(
+        message,
+        state,
+        "✏️ Введите наименование расхода (назначение):"
+    )
+    await state.set_state(CreateExpenseFSM.waiting_for_name)
+
+
+@router.message(CreateExpenseFSM.waiting_for_name)
+async def expense_name_input(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+    await delete_prev_bot_message(message, state)
+    await state.update_data(name=name)
+    await send_and_store(
+        message,
+        state,
+        "💰 Введите стоимость расхода:"
+    )
+    await state.set_state(CreateExpenseFSM.waiting_for_cost)
+
+
+# --- FSM handler для ввода стоимости ---
+@router.message(CreateExpenseFSM.waiting_for_cost)
+async def expense_price_input(message: types.Message, state: FSMContext):
+    try:
+        price = float(message.text.replace(",", "."))
+    except ValueError:
+        await message.answer("❌ Пожалуйста, введите число.")
+        return
+    await delete_prev_bot_message(message, state)
+    await state.update_data(cost=price)
+    await state.update_data(user_id=message.from_user.id)
+
+    # Получаем последние ID заказов через Google Apps Script
+    recent_order_ids = get_recent_order_ids(days=3)
+    await send_and_store(
+        message,
+        state,
+        "🔗 Выберите ID заказа (или нажмите Пропустить / Нет заказов):",
+        reply_markup=expense_order_ids_keyboard(recent_order_ids)
+    )
+
+    # Переходим к следующему состоянию FSM
+    await state.set_state(CreateExpenseFSM.waiting_for_order_id)
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_set_order"))
+async def expense_order_selected(
+    call: CallbackQuery,
+    callback_data: ExpenseCallback,
+    state: FSMContext
+):
+    order_id = callback_data.value if callback_data.value != "none" else None
+    await state.update_data(order_id=order_id)
+
+    cities = get_all_cities()
+
+    await call.message.edit_text(
+        "🏙 Выберите город:",
+        reply_markup=expense_cities_keyboard(cities)
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_city)
+    await call.answer()
+
+
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "expense_set_city"), CreateExpenseFSM.waiting_for_city)
+async def expense_city_selected(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
+    await state.update_data(city=callback_data.value)
+
+    data = await state.get_data()
+    date = datetime.now().strftime("%d.%m.%Y")
+    await state.update_data(date=date)
+    await call.message.edit_text(
+        "💡 Проверьте введённые данные:",
+        reply_markup=expense_confirm_keyboard(data),
+        parse_mode="HTML"
+    )
+
+    await state.set_state(CreateExpenseFSM.waiting_for_confirm)
+    await call.answer()
+
+
+
+
+@router.callback_query(ExpenseCallback.filter(F.action == "confirm_expense"), CreateExpenseFSM.waiting_for_confirm)
+async def expense_confirm(call: CallbackQuery, callback_data: ExpenseCallback, state: FSMContext):
+    """
+    Универсальный обработчик подтверждения расхода.
+    """
+    data = await state.get_data()
+    user_id = data.get("user_id")
+    if callback_data.value == "yes":
+        # Пользователь подтвердил расход, записываем в Google Sheet
+        append_expense_to_sheet(data)
+        await call.message.edit_text(
+            "✅ Расход успешно записан!",
+        )
+        if user_has_role(user_id, ['admin']):
+            await call.message.answer(f'Вы в панеле администратора.',
+                                 reply_markup=admin_main_keyboard())
+        elif user_has_role(user_id, ['manager']):
+            await call.message.answer(f'Вы в панеле менеджера.',
+                                      reply_markup=manager_main_keyboard())
+        await state.clear()
+        await call.answer()
+        return
+
+    elif callback_data.value.startswith("edit_"):
+        # Пользователь хочет редактировать одно из полей
+        # Например edit_cost, edit_quantity, edit_name, edit_category и т.д.
+        field_to_edit = callback_data.value.replace("edit_", "")
+        edit_handlers_map = {
+            "cost": CreateExpenseFSM.waiting_for_cost,
+            "quantity": CreateExpenseFSM.waiting_for_quantity,
+            "name": CreateExpenseFSM.waiting_for_name,
+            "category": CreateExpenseFSM.waiting_for_category,
+            "subcategory": CreateExpenseFSM.waiting_for_subcategory,
+            "brand": CreateExpenseFSM.waiting_for_brand,
+            "order_id": CreateExpenseFSM.waiting_for_order_id,
+            "city": CreateExpenseFSM.waiting_for_city
+        }
+
+        next_state = edit_handlers_map.get(field_to_edit)
+        if next_state:
+            await state.set_state(next_state)
+        await call.answer()
+        return
+
+    # Если callback не распознан, просто обновляем превью
+    await call.message.edit_text(
+        "💡 Проверьте введённые данные:",
+        reply_markup=expense_confirm_keyboard(data),
+        parse_mode="HTML"
+    )
+    await call.answer()
+
+
+
+
+
+==================================================
+FILE: .\app\handlers\manager.py
+==================================================
+
+from aiogram import Router, F
+
+from app.keyboards.admin_brands import brands_list_keyboard
+from app.keyboards.manager import manager_main_keyboard
+from app.services.permissions import user_has_role
+from aiogram import Router, types, F
+
+from app.utils.roles import UserRole
+
+router = Router()
+
+
+==================================================
+FILE: .\app\handlers\start.py
+==================================================
+
+from aiogram import Router, types
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from app.keyboards.admin import admin_main_keyboard
+from app.keyboards.manager import manager_main_keyboard
+from app.services.auth_service import authenticate_user, user_exists
+from aiogram.filters import Command
+
+from app.services.permissions import user_has_role
+
+router = Router()
+
+class AuthFSM(StatesGroup):
+    waiting_for_password = State()
+
+@router.message(Command("start"))
+async def start(message: types.Message, state: FSMContext):
+    # 8336892245
+    if user_exists(message.from_user.id):
+        if user_has_role(message.from_user.id, ['admin']):
+            await message.answer(f'С возращением Админ {message.from_user.first_name}', reply_markup=admin_main_keyboard())
+        if user_has_role(message.from_user.id, ['manager']):
+            await message.answer(f'С возращением', reply_markup=manager_main_keyboard())
+    else:
+        await message.answer("🔐 Введите пароль доступа")
+        await state.set_state(AuthFSM.waiting_for_password)
+
+@router.message(AuthFSM.waiting_for_password)
+async def process_password(message: types.Message, state: FSMContext):
+    user = authenticate_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        full_name=message.from_user.full_name,
+        password=message.text
+    )
+
+    if not user:
+        await message.answer("❌ Неверный пароль")
+        return
+
+    await message.answer("✅ Доступ разрешён")
+    await state.clear()
+    if user_has_role(message.from_user.id, ['admin']):
+        await start(message, state)
+    if user_has_role(message.from_user.id, ['manager']):
+        await message.answer(
+            "🛠 <b>Менеджер-панель</b>\n\n"
+            "Выберите действие:",
+            reply_markup=manager_main_keyboard(),
+            parse_mode="HTML"
+        )
+
+
+
+
+==================================================
+FILE: .\app\keyboards\admin.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback, ExpenseCallback
+
+
+def admin_main_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="👤 Управление пользователями",
+                    callback_data=AdminCallback(action="users", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📊 Управление категориями",
+                    callback_data=AdminCallback(action="categories", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔐 Доступы и пароли",
+                    callback_data=AdminCallback(action="access", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏙️ Города",
+                    callback_data=AdminCallback(action="city", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Записать расход",
+                    callback_data=ExpenseCallback(action="expense_create").pack()
+                )
+            ]
+        ]
+    )
+
+
+def admin_users_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📋 Активные пользователи",
+                    callback_data=AdminCallback(action="users_list", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Удалить пользователя",
+                    callback_data=AdminCallback(action="users_delete", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=AdminCallback(action="back", role='admin').pack()
+                )
+            ]
+        ]
+    )
+
+
+def city_admin_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="📋 Список городов",
+                callback_data=AdminCallback(action="city_list", role='admin').pack()
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить город",
+                callback_data=AdminCallback(action="city_add", role='admin').pack()
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅ Назад",
+                callback_data=AdminCallback(action="back", role='admin').pack()
+            )
+        ]
+    ])
+
+
+def cities_list_keyboard(cities):
+    keyboard = []
+
+    for city in cities:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"🏙 {city.name}",
+                callback_data=AdminCallback(
+                    action="city_delete",
+                    value=str(city.id),
+                    role='admin'
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅ Назад",
+            callback_data=AdminCallback(action="city", role='admin').pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+==================================================
+FILE: .\app\keyboards\admin_access.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback
+from app.utils.constants import ROLES
+
+
+def admin_access_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📋 Активные пароли",
+                    callback_data=AdminCallback(action="access_list", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Создать пароль",
+                    callback_data=AdminCallback(action="access_create", role='admin').pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=AdminCallback(action="back", role='admin').pack()
+                )
+            ]
+        ]
+    )
+
+
+def access_keys_list_keyboard(keys):
+    keyboard = []
+
+    for key in keys:
+        status = "🟢" if key.is_active else "🔴"
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"{status} {key.password} ({key.role})",
+                callback_data=AdminCallback(
+                    action="access_view",
+                    value=str(key.id)
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=AdminCallback(action="access",  role='admin').pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def access_key_actions_keyboard(key_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ Удалить пароль",
+                    callback_data=AdminCallback(
+                        action="access_deactivate",
+                        value=str(key_id),
+                        role='admin'
+                    ).pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=AdminCallback(action="access_list", role='admin').pack()
+                )
+            ]
+        ]
+    )
+
+
+def access_roles_keyboard(user_id: int):
+    keyboard = []
+
+    for role in ROLES:
+        cb_data = AdminCallback(
+            action="access_set_role",
+            user_id=user_id,  # ✅ передаём user_id
+            value=role,
+            role='admin'
+        ).pack()
+
+        keyboard.append([
+            InlineKeyboardButton(
+                text=role,
+                callback_data=cb_data,
+                role='admin'
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+==================================================
+FILE: .\app\keyboards\admin_brands.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback
+
+
+def brands_list_keyboard(category_id: int, brands):
+    keyboard = []
+
+    if brands:
+        for brand in brands:
+            keyboard.append([
+                InlineKeyboardButton(
+                    text=f"🗑 {brand.name}",
+                    callback_data=AdminCallback(
+                        action="brand_delete",
+                        value=str(brand.id),
+                        role='admin'
+                    ).pack()
+                )
+            ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton(
+                text="(брендов нет)",
+                callback_data="noop",
+                role='admin'
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="➕ Добавить бренд",
+            callback_data=AdminCallback(
+                action="brand_create",
+                value=str(category_id),
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅ Назад",
+            callback_data=AdminCallback(
+                action="subcategory_list",
+                value=str(category_id),
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+==================================================
+FILE: .\app\keyboards\admin_categories.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback
+
+
+def categories_main_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="📦 Категории расходов",
+            callback_data=AdminCallback(action="category_list", role='admin').pack()
+        )],
+        [InlineKeyboardButton(
+            text="⬅ Назад",
+            callback_data=AdminCallback(action="back", role='admin').pack()
+        )]
+    ])
+
+
+def categories_list_keyboard(categories):
+    keyboard = []
+
+    for cat in categories:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"📂 {cat.name}",
+                callback_data=AdminCallback(
+                    action="subcategory_list",
+                    value=str(cat.id),
+                    role='admin'
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="➕ Создать категорию",
+            callback_data=AdminCallback(action="category_create", role='admin').pack()
+        )
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅ Назад",
+            callback_data=AdminCallback(action="back", role='admin').pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+==================================================
+FILE: .\app\keyboards\admin_subcategories.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback
+
+
+def subcategories_list_keyboard(category_id: int, category_name: str, subcategories):
+    keyboard = []
+
+    if subcategories:
+        for sub in subcategories:
+            keyboard.append([
+                InlineKeyboardButton(
+                    text=f"🗑 {sub.name}",
+                    callback_data=AdminCallback(
+                        action="subcategory_delete",
+                        value=str(sub.id),
+                        role='admin'
+                    ).pack()
+                )
+            ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton(
+                text="(нет подкатегорий)",
+                callback_data="noop",
+                role='admin'
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="➕ Добавить подкатегорию",
+            callback_data=AdminCallback(
+                action="subcategory_create",
+                value=str(category_id),
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="📦 Бренды",
+            callback_data=AdminCallback(
+                action="brand_list",
+                value=str(category_id),
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="🗑 Удалить категорию",
+            callback_data=AdminCallback(
+                action="category_delete",
+                value=str(category_id),
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅ Назад",
+            callback_data=AdminCallback(
+                action="category_list",
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+==================================================
+FILE: .\app\keyboards\admin_users.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback
+from app.database.models.user import User
+
+
+def users_list_keyboard(users: list[User]):
+    keyboard = []
+
+    for user in users:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"👤 {user.full_name} ({user.role}) ({user.city})",
+                callback_data=AdminCallback(
+                    action="user_view",
+                    user_id=user.telegram_id
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=AdminCallback(action="back", role='admin').pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def user_actions_keyboard(user_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✏️ Редактировать",
+                    callback_data=AdminCallback(
+                        action="user_edit",
+                        user_id=user_id
+                    ).pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ Удалить",
+                    callback_data=AdminCallback(
+                        action="user_delete",
+                        user_id=user_id
+                    ).pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=AdminCallback(action="users", role='admin').pack()
+                )
+            ]
+        ]
+    )
+
+
+def user_edit_keyboard(user_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🏙 Сменить город",
+                    callback_data=AdminCallback(
+                        action="user_change_city",
+                        user_id=user_id
+                    ).pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧩 Сменить роль",
+                    callback_data=AdminCallback(
+                        action="user_change_role",
+                        user_id=user_id
+                    ).pack()
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=AdminCallback(
+                        action="user_view",
+                        user_id=user_id,
+                        role='admin'
+                    ).pack()
+                )
+            ]
+        ]
+    )
+
+from app.utils.constants import CITIES
+
+def user_city_keyboard(user_id: int):
+    keyboard = []
+
+    for city in CITIES:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=city,
+                callback_data=AdminCallback(
+                    action="user_set_city",
+                    user_id=user_id,
+                    value=city
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=AdminCallback(
+                action="user_edit",
+                user_id=user_id,
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+from app.utils.constants import ROLES
+
+def user_role_keyboard(user_id: int):
+    keyboard = []
+
+    for role in ROLES:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=role,
+                callback_data=AdminCallback(
+                    action="user_set_role",
+                    user_id=user_id,
+                    value=role
+                ).pack()
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад",
+            callback_data=AdminCallback(
+                action="user_edit",
+                user_id=user_id,
+                role='admin'
+            ).pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+==================================================
+FILE: .\app\keyboards\create_expense.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+from app.utils.callbacks import ExpenseCallback
+
+
+def expense_type_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="Прямой",
+                callback_data="expense_type:direct"
+            ),
+            InlineKeyboardButton(
+                text="Общий",
+                callback_data="expense_type:general"
+            )
+        ]
+    ])
+
+
+def expense_categories_keyboard(categories):
+    """
+    Создает inline-клавиатуру с категориями для записи расхода.
+    categories - список объектов категорий из БД.
+    """
+    keyboard = []
+
+    for cat in categories:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"📂 {cat.name}",
+                callback_data=ExpenseCallback(
+                    action="expense_category_select",
+                    value=str(cat.id)  # передаем id категории
+                ).pack()
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def expense_subcategories_keyboard(subcategories):
+    """
+    Создает inline-клавиатуру с подкатегориями для выбора расхода.
+    subcategories - список объектов подкатегорий из БД.
+    """
+    keyboard = []
+
+    for sub in subcategories:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"📁 {sub.name}",
+                callback_data=ExpenseCallback(
+                    action="expense_subcategory_select",
+                    value=str(sub.id)
+                ).pack()
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def expense_brands_keyboard(brands):
+    keyboard = []
+
+    for brand in brands:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=brand.name,
+                callback_data=ExpenseCallback(
+                    action="expense_brand_select",
+                    brand_id=brand.id,
+                    value=brand.name
+                ).pack()
+            )
+        ])
+    keyboard.append([
+        InlineKeyboardButton(
+            text='Нету бренда',
+            callback_data=ExpenseCallback(
+                action="expense_brand_select",
+                value='--'
+            ).pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+
+def expense_order_ids_keyboard(order_ids: list[str]) -> InlineKeyboardMarkup:
+    keyboard = []
+    for oid in order_ids:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=oid,
+                callback_data=ExpenseCallback(
+                    action="expense_set_order",
+                    value=oid
+                ).pack()
+            )
+        ])
+    # Кнопка "пропустить"
+    keyboard.append([
+        InlineKeyboardButton(
+            text="Пропустить / Нет заказов",
+            callback_data=ExpenseCallback(
+                action="expense_set_order",
+                value="-"
+            ).pack()
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def expense_cities_keyboard(cities):
+    keyboard = []
+
+    for city in cities:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=city.name,
+                callback_data=ExpenseCallback(
+                    action="expense_set_city",
+                    value=str(city.name)
+                ).pack()
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def expense_confirm_keyboard(state_data: dict) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для подтверждения расхода:
+    - Верхняя кнопка: ✅ Подтвердить
+    - Ниже: кнопки для редактирования полей
+    """
+    keyboard = []
+
+    # ✅ Подтверждение
+    keyboard.append([
+        InlineKeyboardButton(
+            text="✅ Подтвердить",
+            callback_data=ExpenseCallback(action="confirm_expense", value='yes').pack()
+        )
+    ])
+
+    # Поля для редактирования
+    editable_fields = [
+        ("cost", "Стоимость"),
+        ("quantity", "Кол-во"),
+        ("category", "Категория"),
+        ("subcategory", "Подкатегория"),
+        ("brand", "Бренд"),
+        ("name", "Наименование"),
+        ("order", "ID заказа"),
+        ("city", "Город")
+    ]
+
+    for field_key, field_label in editable_fields:
+        if field_key in state_data:
+            display_value = state_data[field_key]
+            keyboard.append([
+                InlineKeyboardButton(
+
+                    text=f"{field_label}: {display_value}",
+                    callback_data=ExpenseCallback(action=f"edit_{field_key}").pack()
+                )
+            ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+
+==================================================
+FILE: .\app\keyboards\manager.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.utils.callbacks import AdminCallback, ExpenseCallback
+
+
+def manager_main_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕ Записать расход",
+                    callback_data=ExpenseCallback(action="expense_create").pack()
+                )
+            ]
+        ]
+    )
+
+==================================================
+FILE: .\app\middlewares\auth.py
+==================================================
+
+from aiogram import BaseMiddleware
+from app.database.session import SessionLocal
+from app.database.models.user import User
+
+
+class AuthMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        with SessionLocal() as session:
+            user = session.query(User).filter(
+                User.telegram_id == event.from_user.id
+            ).first()
+
+            if not user or not user.is_active:
+                await event.answer("🚫 Доступ запрещён")
+                return None
+
+        return await handler(event, data)
+
+
+==================================================
+FILE: .\app\services\access_keys_service.py
+==================================================
+
+from app.database.session import SessionLocal
+from app.database.models.access_key import AccessKey
+
+
+def get_all_keys():
+    with SessionLocal() as session:
+        return session.query(AccessKey).all()
+
+
+def create_access_key(password: str, role: str):
+    with SessionLocal() as session:
+        key = AccessKey(
+            password=password,
+            role=role,
+            is_active=True,
+            used_count=0
+        )
+        session.add(key)
+        session.commit()
+        return key
+
+
+def delete_key(key_id: int):
+    with SessionLocal() as session:
+        key = session.query(AccessKey).filter(AccessKey.id == key_id).first()
+        if not key:
+            return False
+        session.query(AccessKey).filter(AccessKey.id == key_id).delete()
+        session.commit()
+        return True
+
+
+==================================================
+FILE: .\app\services\auth_service.py
+==================================================
+
+from app.config import GLOBAL_PASSWORD
+from app.database.session import SessionLocal
+from app.database.models.access_key import AccessKey
+from app.database.models.user import User
+from app.utils.security import verify_password
+
+
+def authenticate_user(telegram_id: int, username: str, full_name: str, password: str):
+    with SessionLocal() as session:
+        # Получаем все активные ключи доступа
+        keys = session.query(AccessKey).filter(AccessKey.is_active == True).all()
+        if password == GLOBAL_PASSWORD:
+            # Создаем пользователя, если пароль совпадает
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=full_name,
+                role="admin"
+            )
+            session.add(user)
+            session.commit()
+            return user
+        else:
+            for key in keys:
+                if verify_password(password, key.password):
+                    # Создаем пользователя, если пароль совпадает
+                    user = User(
+                        telegram_id=telegram_id,
+                        username=username,
+                        full_name=full_name,
+                        role=key.role
+                    )
+                    session.add(user)
+
+                    # Увеличиваем счетчик использования ключа
+                    key.used_count += 1
+
+                    session.commit()
+                    return user
+
+        # Если пароль не совпал ни с одним ключом
+        return None
+
+def user_exists(telegram_id: int):
+    with SessionLocal() as session:
+        user = session.query(User).filter(User.telegram_id == telegram_id).first()
+        if user:
+            return True
+        else:
+            return False
+
+==================================================
+FILE: .\app\services\cities_service.py
+==================================================
+
+from app.database.models.city import City
+from app.database.session import SessionLocal
+
+
+def get_all_cities():
+    with SessionLocal() as session:
+        return session.query(City).all()
+
+
+def add_city(name: str):
+    db = SessionLocal()
+    try:
+        city = City(name=name)
+        db.add(city)
+        db.commit()
+    finally:
+        db.close()
+
+def delete_city(city_id: int):
+
+    db = SessionLocal()
+    try:
+        db.query(City).filter(City.id == city_id).delete()
+        db.commit()
+    finally:
+        db.close()
+
+==================================================
+FILE: .\app\services\expense_brands_service.py
+==================================================
+
+from app.database.session import SessionLocal
+from app.database.models.expense_brand import ExpenseBrand
+
+
+def get_brands_by_category(category_id: int):
+    with SessionLocal() as session:
+        return (
+            session.query(ExpenseBrand)
+            .filter_by(category_id=category_id)
+            .order_by(ExpenseBrand.name)
+            .all()
+        )
+
+
+def create_brand(category_id: int, name: str) -> bool:
+    with SessionLocal() as session:
+        exists = (
+            session.query(ExpenseBrand)
+            .filter_by(category_id=category_id, name=name)
+            .first()
+        )
+        if exists:
+            return False
+
+        brand = ExpenseBrand(
+            name=name,
+            category_id=category_id
+        )
+        session.add(brand)
+        session.commit()
+        return True
+
+
+def delete_brand(brand_id: int) -> bool:
+    with SessionLocal() as session:
+        brand = session.get(ExpenseBrand, brand_id)
+        if not brand:
+            return False
+
+        session.delete(brand)
+        session.commit()
+        return True
+
+==================================================
+FILE: .\app\services\expense_categories_service.py
+==================================================
+
+from sqlalchemy.orm import Session
+from app.database.session import SessionLocal
+from app.database.models.expense_category import ExpenseCategory
+
+
+def get_all_categories():
+    with SessionLocal() as session:
+        return session.query(ExpenseCategory).order_by(ExpenseCategory.name).all()
+
+
+def create_category(name: str) -> bool:
+    with SessionLocal() as session:
+        exists = session.query(ExpenseCategory).filter_by(name=name).first()
+        if exists:
+            return False
+
+        category = ExpenseCategory(name=name)
+        session.add(category)
+        session.commit()
+        return True
+
+
+def delete_category(category_id: int) -> bool:
+    with SessionLocal() as session:
+        category = session.get(ExpenseCategory, category_id)
+        if not category:
+            return False
+
+        session.delete(category)
+        session.commit()
+        return True
+
+
+def get_category_by_id(category_id: int) -> ExpenseCategory | bool:
+    with SessionLocal() as session:
+        category = session.query(ExpenseCategory).filter_by(id=category_id).first()
+        if category:
+            return category
+        else:
+            return False
+
+
+==================================================
+FILE: .\app\services\expense_create.py
+==================================================
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+from app.utils.callbacks import AdminCallback
+
+
+def expense_type_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="📦 Общий",
+                callback_data="expense_type:general:Общий"
+            ),
+            InlineKeyboardButton(
+                text="🎯 Прямой",
+                callback_data="expense_type:direct:Прямой"
+            ),
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=AdminCallback(action="back", role='admin').pack()
+            )
+        ]
+    ])
+
+
+==================================================
+FILE: .\app\services\expense_subcategories_service.py
+==================================================
+
+from app.database.session import SessionLocal
+from app.database.models.expense_subcategory import ExpenseSubCategory
+
+
+def get_subcategories_by_category(category_id: int):
+    with SessionLocal() as session:
+        return (
+            session.query(ExpenseSubCategory)
+            .filter_by(category_id=category_id)
+            .order_by(ExpenseSubCategory.name)
+            .all()
+        )
+
+def get_subcategories_by_id(subcategory_id: int):
+    with SessionLocal() as session:
+        return (
+            session.query(ExpenseSubCategory).filter_by(id=subcategory_id).first()
+        )
+
+
+def create_subcategory(category_id: int, name: str) -> bool:
+    with SessionLocal() as session:
+        exists = (
+            session.query(ExpenseSubCategory)
+            .filter_by(category_id=category_id, name=name)
+            .first()
+        )
+        if exists:
+            return False
+
+        sub = ExpenseSubCategory(
+            name=name,
+            category_id=category_id
+        )
+        session.add(sub)
+        session.commit()
+        return True
+
+
+def delete_subcategory(subcategory_id: int) -> bool:
+    with SessionLocal() as session:
+        sub = session.get(ExpenseSubCategory, subcategory_id)
+        if not sub:
+            return False
+
+        session.delete(sub)
+        session.commit()
+        return True
+
+
+==================================================
+FILE: .\app\services\google_sheets_service.py
+==================================================
+
+import requests
+from datetime import datetime
+import pytz
+
+from app.config import WEBAPP_URL
+
+GOOGLE_EXPENSES_URL = "https://script.google.com/macros/s/AKfycbzCNOMJiidv3WW_Tz-8iyXyfI4rfMAn4mSnMesKiV5o4-5oRhWfzKsQUsBjk2GsHxJugA/exec"
+
+
+def append_expense_to_sheet(data: dict) -> bool:
+    """
+    Отправляет расход в Google Sheets через GAS
+    """
+    payload = {
+        "date": data.get("date"),
+        "type": data.get("expense_value"),
+        "category": data.get("category"),
+        "subcategory": data.get("subcategory"),
+        "brand": data.get("brand"),
+        "qty": data.get("quantity"),
+        "title": data.get("name"),
+        "amount": data.get("cost"),
+        "order_id": data.get("order_id") or "",
+        "city": data.get("city"),
+    }
+
+    try:
+        resp = requests.post(
+            GOOGLE_EXPENSES_URL,
+            json=payload,
+            timeout=10
+        )
+
+        if resp.status_code == 200:
+            result = resp.json()
+            return result.get("status") == "ok"
+
+    except Exception as e:
+        print("❌ Ошибка отправки в Google Sheets:", e)
+
+    return False
+
+
+def get_recent_order_ids(days: int = 3) -> list[str]:
+    try:
+        resp = requests.get(WEBAPP_URL, params={"action": "recent_orders", "days": days})
+        print(resp.text)
+        if resp.status_code == 200:
+            return resp.json()  # Список ID заказов
+    except Exception as e:
+        print("Ошибка при запросе заказов:", e)
+    return []
+
+==================================================
+FILE: .\app\services\permissions.py
+==================================================
+
+from app.database.session import SessionLocal
+from app.database.models.user import User
+
+
+def user_has_role(telegram_id: int, allowed_roles: list[str]) -> bool:
+    with SessionLocal() as session:
+        user = session.query(User).filter(
+            User.telegram_id == telegram_id
+        ).first()
+
+        if not user:
+            return False
+
+        return user.role in allowed_roles
+
+==================================================
+FILE: .\app\services\users_service.py
+==================================================
+
+from app.database.session import SessionLocal
+from app.database.models.user import User
+
+
+def get_all_users():
+    with SessionLocal() as session:
+        return session.query(User).all()
+
+
+def get_user_by_id(user_id: int):
+    with SessionLocal() as session:
+        return session.query(User).filter(User.telegram_id == user_id).first()
+
+
+def delete_user(user_id: int):
+    with SessionLocal() as session:
+        user = session.query(User).filter(User.telegram_id == user_id).first()
+        if user:
+            session.delete(user)
+            session.commit()
+            return True
+        return False
+
+
+def update_user_city(user_id: int, city: str):
+    with SessionLocal() as session:
+        user = session.query(User).filter(User.telegram_id == user_id).first()
+        if not user:
+            return False
+
+        user.city = city
+        session.commit()
+        return True
+
+
+def update_user_role(user_id: int, role: str):
+    with SessionLocal() as session:
+        user = session.query(User).filter(User.telegram_id == user_id).first()
+        if not user:
+            return False
+
+        user.role = role
+        session.commit()
+        return True
+
+
+==================================================
+FILE: .\app\states\admin_access.py
+==================================================
+
+from aiogram.fsm.state import StatesGroup, State
+
+
+class CreateAccessKeyFSM(StatesGroup):
+    waiting_for_password = State()
+    waiting_for_role = State()
+
+
+==================================================
+FILE: .\app\states\admin_brands.py
+==================================================
+
+from aiogram.fsm.state import StatesGroup, State
+
+
+class AdminBrandFSM(StatesGroup):
+    waiting_for_brand_name = State()
+
+
+==================================================
+FILE: .\app\states\admin_categories.py
+==================================================
+
+from aiogram.fsm.state import StatesGroup, State
+
+
+class AdminCategoryFSM(StatesGroup):
+    waiting_for_category_name = State()
+
+
+==================================================
+FILE: .\app\states\admin_city.py
+==================================================
+
+from aiogram.fsm.state import StatesGroup, State
+
+
+class CreateCityFSM(StatesGroup):
+    waiting_for_city_name = State()
+
+==================================================
+FILE: .\app\states\admin_subcategories.py
+==================================================
+
+from aiogram.fsm.state import StatesGroup, State
+
+
+class AdminSubCategoryFSM(StatesGroup):
+    waiting_for_subcategory_name = State()
+
+
+==================================================
+FILE: .\app\states\create_expense.py
+==================================================
+
+from aiogram.fsm.state import StatesGroup, State
+
+class CreateExpenseFSM(StatesGroup):
+    waiting_for_type = State()
+    waiting_for_category = State()
+    waiting_for_subcategory = State()
+    waiting_for_brand = State()
+    waiting_for_quantity = State()
+    waiting_for_name = State()
+    waiting_for_cost = State()
+    waiting_for_order_id = State()
+    waiting_for_city = State()
+    waiting_for_confirm = State()
+
+
+==================================================
+FILE: .\app\utils\bot_message_utils.py
+==================================================
+
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+
+async def delete_prev_bot_message(message: Message, state: FSMContext):
+    data = await state.get_data()
+    prev_msg_id = data.get("last_bot_message_id")
+
+    if prev_msg_id:
+        try:
+            await message.bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=prev_msg_id
+            )
+        except Exception:
+            pass  # сообщение могло быть уже удалено
+
+async def send_and_store(message: Message, state: FSMContext, text: str, **kwargs):
+    sent = await message.answer(text, **kwargs)
+    await state.update_data(last_bot_message_id=sent.message_id)
+
+
+
+==================================================
+FILE: .\app\utils\callbacks.py
+==================================================
+
+from aiogram.filters.callback_data import CallbackData
+
+
+class AdminCallback(CallbackData, prefix="admin"):
+    action: str
+    user_id: int | None = None
+    value: str | None = None
+    role: str | None = None
+
+
+class ExpenseCallback(CallbackData, prefix="expense"):
+    action: str
+    category_id: int | None = None
+    subcategory_id: int | None = None
+    brand_id: int | None = None
+    value: str | None = None
+
+
+class ManagerCallback(CallbackData, prefix="manager"):
+    action: str
+    category_id: int | None = None
+    subcategory_id: int | None = None
+    brand_id: int | None = None
+    value: str | None = None
+    role: str | None = 'manager'
+
+
+
+def is_admin_or_manager(callback_data: AdminCallback):
+    return callback_data.role in ["admin", "manager"]
+
+
+==================================================
+FILE: .\app\utils\constants.py
+==================================================
+
+CITIES = [
+    "Белгород",
+    "Старый Оскол",
+    "Курск"
+]
+
+ROLES = [
+    "admin",
+    "manager",
+    "supervisor",
+    "cleaner"
+]
+
+
+==================================================
+FILE: .\app\utils\roles.py
+==================================================
+
+from enum import Enum
+
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MANAGER = "manager"
+    SUPERVISOR = "supervisor"
+    CLEANER = "cleaner"
+
+
+==================================================
+FILE: .\app\utils\security.py
+==================================================
+
+from passlib.hash import bcrypt
+
+def hash_password(password: str) -> str:
+    return bcrypt.hash(password)
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return True if password == password_hash else False
+
+
+==================================================
+FILE: .\app\utils\text.py
+==================================================
+
+def format_expense_preview(data: dict) -> str:
+    return (
+        "🧾 <b>Проверьте данные расхода</b>\n\n"
+        f"📅 Дата: <b>{data['date']}</b>\n"
+        f"📌 Тип: <b>{data['type']}</b>\n"
+        f"🏷 Категория: <b>{data['category_name']}</b>\n"
+        f"📁 Подкатегория: <b>{data['subcategory_name']}</b>\n"
+        f"🏭 Бренд: <b>{data.get('brand_name', '—')}</b>\n"
+        f"🔢 Кол-во: <b>{data['qty']}</b>\n"
+        f"📝 Назначение: <b>{data['title']}</b>\n"
+        f"💰 Стоимость: <b>{data['price']}</b>\n"
+        f"🔗 ID заказа: <b>{data.get('order_id', '—')}</b>\n"
+        f"🏙 Город: <b>{data['city_name']}</b>\n"
+    )
+
